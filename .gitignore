@@ -1,0 +1,19 @@
+# Build results
+*.exe
+*.dll
+*.pdb
+*.3dsx
+*.cia
+*.smdh
+
+# DevkitPro Objects
+*.o
+*.elf
+*.d
+
+# Visual Studio / VB.NET
+bin/
+obj/
+.vs/
+*.user
+*.suo
