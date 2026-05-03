@@ -6,6 +6,10 @@ ifeq ($(strip $(DEVKITPRO)),)
 $(error "Please set DEVKITPRO in your environment. export DEVKITPRO=<path to>devkitPro")
 endif
 
+APP_TITLE	:=	Tomodachi Life Save Editor
+APP_DESCRIPTION	:=	Edit your island on the go!
+APP_AUTHOR	:=	KiyoshiTheKidd
+
 TOPDIR ?= $(CURDIR)
 include $(DEVKITPRO)/devkitARM/3ds_rules
 
@@ -17,6 +21,7 @@ include $(DEVKITPRO)/devkitARM/3ds_rules
 # INCLUDES is a list of directories containing header files
 #---------------------------------------------------------------------------------
 TARGET		:=	TomodachiLife_3DS_SaveEditor
+
 BUILD		:=	build
 SOURCES		:=	source
 DATA		:=	data
@@ -31,9 +36,9 @@ CFLAGS	:=	-g -Wall -O2 -mword-relocations \
 			-fomit-frame-pointer -ffunction-sections \
 			$(ARCH)
 
-CFLAGS	+=	$(INCLUDE) -DARM11 -D_3DS
+CFLAGS	+=	$(INCLUDE) -D__3DS__
 
-CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
+CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++17
 
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
@@ -44,6 +49,10 @@ LIBS	:= -lcitro2d -lcitro3d -lctru -lm
 # list of directories containing libraries, this must be the top level containing
 # include and lib
 #---------------------------------------------------------------------------------
+ifeq ($(strip $(CTRU)),)
+export CTRU := $(DEVKITPRO)/libctru
+endif
+
 LIBDIRS	:= $(PORTLIBS) $(CTRU)
 
 #---------------------------------------------------------------------------------

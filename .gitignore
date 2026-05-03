@@ -1,19 +1,25 @@
-# Build results
-*.exe
-*.dll
-*.pdb
+# devkitPro / 3DS build artifacts
 *.3dsx
-*.cia
-*.smdh
-
-# DevkitPro Objects
-*.o
 *.elf
+*.smdh
+*.o
 *.d
 
-# Visual Studio / VB.NET
-bin/
-obj/
-.vs/
-*.user
-*.suo
+# Logs and Temp files
+build_log.txt
+*.log
+
+# Windows System Files
+Thumbs.db
+Desktop.ini
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# External Reference Data (keep out of repo)
+Tomodachi-Life-Save-Editor-master/
+flash/
+romfs_dump/

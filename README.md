@@ -1,34 +1,44 @@
-# Tomodachi Life 3DS Save Editor
+# Tomodachi Life 3DS Save Editor (Homebrew)
 
-A native homebrew application for the Nintendo 3DS that allows you to read, modify, and manage your *Tomodachi Life* save data directly on your console without needing a PC!
+A native 3DS homebrew application to edit Tomodachi Life save files (`savedataArc.txt`) directly on your console.
 
-## 🎯 Project Goal
-The goal of this project is to port the functionality of the original Windows-based (VB.NET) Tomodachi Life Save Editor into a lightweight, stable C++ homebrew application. By running directly on the 3DS hardware via the Homebrew Launcher, this tool will eliminate the need to extract your save data to an SD card, edit it on a computer, and re-inject it.
+## Quick Start (Installation)
 
-## 🚀 Current Status
-**Early Prototype Stage**
-The application is currently in its foundational phase. 
-*   [x] Safe ARM11 hardware initialization and exit lifecycles.
-*   [x] Direct `ARCHIVE_USER_SAVEDATA` mounting (supports both digital SD copies and physical cartridges).
-*   [x] Basic save data parsing (Island Name & Current Money offsets).
-*   [x] Citro2D GUI rendering implementation.
-*   [ ] Write capabilities and editing UI.
-*   [ ] Full Mii and Item database mapping.
+If you have a modded 3DS and just want to use the editor:
 
-*Currently hardcoded for North American Title ID: `000400000008C300`*
+1. **Download**: Grab the latest `TomodachiLife_3DS_SaveEditor.3dsx` from the [Releases](https://github.com/yourusername/repo/releases) page.
+2. **Copy**: Put the `.3dsx` file into the `/3ds/` folder on your SD card.
+3. **Backup**: Use **Checkpoint** or **JKSM** to export a backup of your `savedataArc.txt` before editing.
+4. **Launch**: Open the Homebrew Launcher on your 3DS and select the Tomodachi Life Save Editor.
+5. **Save**: After making changes, press **START** to save and exit.
 
-## 🛠️ Built With
-*   **C++11** - Core application logic.
-*   **devkitARM / libctru** - 3DS hardware interactions and file system mounting.
-*   **citro2d / citro3d** - 2D Graphics and Text Rendering.
+## Features
+- **Money Editor**: Instantly add funds to your island.
+- **Food Inventory**: Add any of the 231 food items with 1:1 save-file mapping (US Version).
+- **Clothes & Colors**: Add clothing items with support for specific color variants or "All Colors" bulk writing.
+- **Dynamic UI**: Clean, scrolled lists that filter out "Unknown" items and metadata tags.
+- **Title Casing**: Professional item presentation (e.g., "Cowboy Duds" instead of "cowboy duds").
 
-## ⚠️ Disclaimer
-**Always backup your save data before using any save editor.** This project is in active development. Editing save data carries an inherent risk of data corruption if incorrect hex values are written to the `savedata.arc` file.
+## Technical Details
+- **Memory Map**: US Food starts at `0x17F0`, Clothes at `0x30`.
+- **Language**: C++ using `libctru` and `citro2d`.
+- **Credits**: Item name mapping and save offsets referenced from the [VB.NET Tomodachi Life Save Editor by Brionjv](https://github.com/Brionjv/Tomodachi-Life-Save-Editor).
 
-## 📝 Building from Source
-To compile this project, you must have [devkitPro](https://devkitpro.org/) installed along with the `3ds-dev` packages.
+---
 
-1. Clone the repository.
-2. Open a terminal in the root directory.
-3. Run `make`.
-4. Copy the resulting `.3dsx` file to the `/3ds/` directory on your console's SD card.
+## Developer Instructions (Building from Source)
+
+If you want to fork this project or contribute:
+
+### Prerequisites
+1. Install [devkitPro](https://devkitpro.org/wiki/Getting_Started).
+2. Ensure `3ds-dev` is installed via pacman (`pacman -S 3ds-dev`).
+
+### Compilation
+- **Windows**: Run the included `build.bat`.
+- **Linux/macOS**: Run `make` in the terminal.
+
+The resulting `TomodachiLife_3DS_SaveEditor.3dsx` will be generated in the root directory.
+
+## License
+MIT License - See the source code for details.
