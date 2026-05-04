@@ -23,7 +23,7 @@ If you have a modded 3DS and just want to use the editor:
 | **Interiors** | 102 room styles | 🔧 In Progress |
 | **Goods** | 18 useful items | ✅ Working |
 | **Treasures** | 166 collectible items | 🔧 In Progress |
-| **Special Unlock** | Bulk-unlock SpotPass/StreetPass items | ✅ Working |
+| **Special Unlock** | Bulk-unlock SpotPass/StreetPass items | CRITICAL BUG |
 
 ### Controls
 - **D-Pad**: Navigate menus and lists
