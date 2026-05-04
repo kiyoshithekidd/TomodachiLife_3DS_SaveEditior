@@ -4,6 +4,7 @@
 *.smdh
 *.o
 *.d
+build/
 
 # Logs and Temp files
 build_log.txt
@@ -23,3 +24,19 @@ Desktop.ini
 Tomodachi-Life-Save-Editor-master/
 flash/
 romfs_dump/
+
+# Save data and debug dumps
+data.bin.txt
+*.bin
+*.bin.txt
+
+# Scratch / dev-only scripts
+scratch/
+dump_all_categories.py
+dump_items.py
+dump_food.bat
+
+# Unused/legacy dataset stubs
+include/item_dataset.h
+include/item_full_dataset.h
+include/clothes_full_dataset.h

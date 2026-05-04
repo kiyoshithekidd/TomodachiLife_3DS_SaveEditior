@@ -8,6 +8,9 @@
 #include <vector>
 #include "food_names.h"
 #include "clothes_dataset.h"
+#include "interiors_dataset.h"
+#include "treasures_dataset.h"
+#include "goods_dataset.h"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -48,10 +51,11 @@ struct CategoryInfo {
     u32 saveBase;             // base save file offset
     int bytesPerItem;         // 1 for food/interiors/goods/treasures, 8 for clothes
     bool hasColors;           // true if items have color variants
+    bool hasSpecialLogic;     // true if it uses the SpotPass/StreetPass scattered offsets
     std::vector<int> filteredIndices;  // populated at init time
 };
 
-CategoryInfo categories[6]; // FOOD, CLOTHES, HATS, INTERIORS, GOODS, TREASURES
+CategoryInfo categories[10]; // FOOD, CLOTHES, HATS, INTERIORS, GOODS, TREASURES, SPECIAL_FOOD
 int selectedColor = -1;
 int savedItemCursor = 0;
 
@@ -83,9 +87,10 @@ CategoryInfo* getCategoryForState(MenuState state) {
     switch (state) {
         case STATE_CATEGORY_FOOD:      return &categories[0];
         case STATE_CATEGORY_CLOTHES:   return &categories[1];
-        case STATE_CATEGORY_INTERIORS: return &categories[2];
-        case STATE_CATEGORY_GOODS:     return &categories[3];
-        case STATE_CATEGORY_TREASURES: return &categories[4];
+        case STATE_CATEGORY_HATS:      return &categories[2];
+        case STATE_CATEGORY_INTERIORS: return &categories[3];
+        case STATE_CATEGORY_GOODS:     return &categories[4];
+        case STATE_CATEGORY_TREASURES: return &categories[5];
         default:                       return &categories[0];
     }
 }
@@ -94,6 +99,7 @@ const char* getTitleForState(MenuState state) {
     switch (state) {
         case STATE_CATEGORY_FOOD:      return "Food";
         case STATE_CATEGORY_CLOTHES:   return "Clothes";
+        case STATE_CATEGORY_HATS:      return "Hats";
         case STATE_CATEGORY_INTERIORS: return "Interiors";
         case STATE_CATEGORY_GOODS:     return "Goods";
         case STATE_CATEGORY_TREASURES: return "Treasures";
@@ -164,6 +170,41 @@ public:
     SafeFile(const SafeFile&) = delete;
     SafeFile& operator=(const SafeFile&) = delete;
 };
+
+// ── Special Items Logic ──────────────────────────────────────────────
+
+void writeSpecialClothes(SafeFile* file, u8 val) {
+    struct Range { u32 start; u32 count; };
+    Range clothesRanges[] = {
+        {0x280, 16}, {0x2B8, 8}, {0x2C8, 8}, {0x2F8, 8}, {0x330, 5},
+        {0x460, 8}, {0x478, 5}, {0x4E0, 8}, {0x4F8, 8}, {0x518, 8},
+        {0x530, 8}, {0x568, 5}, {0x580, 8}, {0x5C8, 6}, {0x5D0, 6},
+        {0x5D8, 6}, {0x5E0, 6}, {0x618, 8}, {0x628, 8}, {0x6A8, 16},
+        {0x6E8, 8}, {0x770, 6}, {0x778, 8}, {0x790, 8}, {0x820, 8},
+        {0x840, 8}, {0x8C0, 8}, {0x8D0, 8}, {0x8F8, 8}, {0x948, 8},
+        {0x968, 8}, {0x998, 8}, {0x9A8, 8}, {0x9D8, 8}, {0x9E8, 8},
+        {0xA18, 8}, {0xA50, 32}, {0xAC0, 8}, {0xAD8, 5}, {0xAE8, 16}
+    };
+    u32 written = 0;
+    for (auto& r : clothesRanges) {
+        for (u32 i = 0; i < r.count; i++) {
+            file->write(r.start + i, &val, 1, &written);
+        }
+    }
+}
+
+void writeSpecialHats(SafeFile* file, u8 val) {
+    struct Range { u32 start; u32 count; };
+    Range hatRanges[] = {
+        {0xFF8, 8}, {0x1020, 8}, {0x1088, 8}, {0x1178, 6}, {0x11B0, 16}
+    };
+    u32 written = 0;
+    for (auto& r : hatRanges) {
+        for (u32 i = 0; i < r.count; i++) {
+            file->write(r.start + i, &val, 1, &written);
+        }
+    }
+}
 
 // ── Services ─────────────────────────────────────────────────────────
 
@@ -260,19 +301,24 @@ int main(int argc, char** argv) {
     }
 
     // ── Initialize categories ────────────────────────────────────────
-    // Food: hardcoded names, direct 1:1 mapping, save at 0x17F0+ID
+    // Food: index 0 is "Nothing", save at 0x17F0+ID
     initCategory(categories[0], FOOD_NAMES, FOOD_COUNT, 0, FOOD_COUNT,
                  0x17F0, 1, false, false);
-    // Clothes: MSBT names with filtering, save at 0x30+(ID*8)
+    // Clothes: standard block at 0x30+(ID*8)
     initCategory(categories[1], CLOTHES_NAMES, CLOTHES_COUNT, 984, 447,
                  0x30, 8, true, true);
+    // Hats: standard block at 0xE30+(ID*8)
+    initCategory(categories[2], CLOTHES_NAMES, CLOTHES_COUNT, 1431, 171,
+                 0xE30, 8, true, true);
     // Interiors: save at 0x1778+ID, 102 items (US)
-    // (names not yet available - using placeholder IDs)
-    // initCategory(categories[2], ...);
+    initCategory(categories[3], INTERIORS_NAMES, INTERIORS_COUNT, 0, INTERIORS_COUNT,
+                 0x1778, 1, false, false);
     // Goods: save at 0x18F0+ID, 18 items (US)
-    // initCategory(categories[3], ...);
+    initCategory(categories[4], GOODS_NAMES, GOODS_COUNT, 0, GOODS_COUNT,
+                 0x18F0, 1, false, false);
     // Treasures: save at 0x1902+ID, 166 items (US)
-    // initCategory(categories[4], ...);
+    initCategory(categories[5], TREASURES_NAMES, TREASURES_COUNT, 0, TREASURES_COUNT,
+                 0x1902, 1, false, false);
 
     // ── State variables ──────────────────────────────────────────────
     MenuState currentState = STATE_MAIN_MENU;
@@ -282,7 +328,7 @@ int main(int argc, char** argv) {
     int colorCursor = 0;           // for the color selection menu
     MenuState previousCategory = STATE_MAIN_MENU;
     const int MAX_VISIBLE_ITEMS = 12;
-    const int MAIN_MENU_ITEMS = 2;  // 0=Money, 1=Food, 2=Clothes
+    const int MAIN_MENU_ITEMS = 8;  // Money, Food, Clothes, Hats, Interiors, Goods, Treasures, Special Unlock
 
     while (aptMainLoop()) {
         hidScanInput(); 
@@ -306,13 +352,37 @@ int main(int argc, char** argv) {
                 }
                 else if (cursorIndex == 1) {
                     currentState = STATE_CATEGORY_FOOD;
-                    cursorIndex = 0;
-                    scrollOffset = 0;
+                    cursorIndex = 0; scrollOffset = 0;
                 }
                 else if (cursorIndex == 2) {
                     currentState = STATE_CATEGORY_CLOTHES;
-                    cursorIndex = 0;
-                    scrollOffset = 0;
+                    cursorIndex = 0; scrollOffset = 0;
+                }
+                else if (cursorIndex == 3) {
+                    currentState = STATE_CATEGORY_HATS;
+                    cursorIndex = 0; scrollOffset = 0;
+                }
+                else if (cursorIndex == 4) {
+                    currentState = STATE_CATEGORY_INTERIORS;
+                    cursorIndex = 0; scrollOffset = 0;
+                }
+                else if (cursorIndex == 5) {
+                    currentState = STATE_CATEGORY_GOODS;
+                    cursorIndex = 0; scrollOffset = 0;
+                }
+                else if (cursorIndex == 6) {
+                    currentState = STATE_CATEGORY_TREASURES;
+                    cursorIndex = 0; scrollOffset = 0;
+                }
+                else if (cursorIndex == 7) {
+                    // Quick Action: Unlock All Special Items
+                    if (fileOpenSuccess) {
+                        writeSpecialClothes(file.get(), 99);
+                        writeSpecialHats(file.get(), 99);
+                        // Also unlock special foods if offset is known
+                        // u8 val = 99;
+                        // for (int i = 0; i < 40; i++) file->write(0x19A8 + i, &val, 1, &bytesRead);
+                    }
                 }
             }
         }
@@ -349,9 +419,28 @@ int main(int argc, char** argv) {
                 int menuIdx = 0;
                 if (currentState == STATE_CATEGORY_FOOD) menuIdx = 1;
                 else if (currentState == STATE_CATEGORY_CLOTHES) menuIdx = 2;
+                else if (currentState == STATE_CATEGORY_HATS) menuIdx = 3;
+                else if (currentState == STATE_CATEGORY_INTERIORS) menuIdx = 4;
+                else if (currentState == STATE_CATEGORY_GOODS) menuIdx = 5;
+                else if (currentState == STATE_CATEGORY_TREASURES) menuIdx = 6;
                 currentState = STATE_MAIN_MENU;
                 cursorIndex = menuIdx;
                 scrollOffset = 0;
+            }
+            if (kDown & KEY_X && fileOpenSuccess) {
+                // Unlock All for current category
+                u8 val = 99;
+                u32 bytesWritten = 0;
+                for (int i = 0; i < (int)cat->filteredIndices.size(); i++) {
+                    int originalIdx = cat->filteredIndices[i];
+                    if (cat->hasColors) {
+                        for (int c = 0; c < cat->bytesPerItem; c++) {
+                            file->write(cat->saveBase + (originalIdx * cat->bytesPerItem) + c, &val, 1, &bytesWritten);
+                        }
+                    } else {
+                        file->write(cat->saveBase + originalIdx, &val, 1, &bytesWritten);
+                    }
+                }
             }
             if (kDown & KEY_A && maxItems > 0) {
                 savedItemCursor = cursorIndex;  // save position for returning
@@ -432,13 +521,24 @@ int main(int argc, char** argv) {
                 "Money: $%lu.%02lu\n\n"
                 "%s Edit Money\n"
                 "%s Add Food\n"
-                "%s Add Clothes\n\n"
+                "%s Add Clothes\n"
+                "%s Add Hats\n"
+                "%s Add Interiors\n"
+                "%s Add Goods\n"
+                "%s Add Treasures\n"
+                "%s Unlock All Special Items\n\n"
                 "Press A to select\n"
+                "In lists, press X to Unlock All\n"
                 "Press START to save & exit",
                 islandNameUTF8, dollars, cents,
                 (cursorIndex == 0) ? "->" : "  ",
                 (cursorIndex == 1) ? "->" : "  ",
-                (cursorIndex == 2) ? "->" : "  ");
+                (cursorIndex == 2) ? "->" : "  ",
+                (cursorIndex == 3) ? "->" : "  ",
+                (cursorIndex == 4) ? "->" : "  ",
+                (cursorIndex == 5) ? "->" : "  ",
+                (cursorIndex == 6) ? "->" : "  ",
+                (cursorIndex == 7) ? "->" : "  ");
         }
         else if (currentState == STATE_MONEY_EDIT) {
             u32 dollars = currentMoney / 100;
@@ -467,9 +567,13 @@ int main(int argc, char** argv) {
             for (int i = scrollOffset; i < scrollOffset + MAX_VISIBLE_ITEMS && i < maxItems; i++) {
                 int originalIdx = cat->filteredIndices[i];
                 char itemName[128];
-                strncpy(itemName, cat->names[originalIdx + cat->nameOffset], sizeof(itemName) - 1);
-                itemName[sizeof(itemName) - 1] = '\0';
-                capitalizeString(itemName);
+                if (cat->names != NULL) {
+                    strncpy(itemName, cat->names[originalIdx + cat->nameOffset], sizeof(itemName) - 1);
+                    itemName[sizeof(itemName) - 1] = '\0';
+                    capitalizeString(itemName);
+                } else {
+                    snprintf(itemName, sizeof(itemName), "Item #%d", originalIdx + 1);
+                }
                 
                 char temp[256];
                 snprintf(temp, sizeof(temp), "%s [%03d] %.50s\n", (i == cursorIndex) ? "->" : "  ", i + 1, itemName);
@@ -481,9 +585,13 @@ int main(int argc, char** argv) {
             CategoryInfo* cat = getCategoryForState(previousCategory);
             int originalIdx = cat->filteredIndices[savedItemCursor];
             char itemName[128];
-            strncpy(itemName, cat->names[originalIdx + cat->nameOffset], sizeof(itemName) - 1);
-            itemName[sizeof(itemName) - 1] = '\0';
-            capitalizeString(itemName);
+            if (cat->names != NULL) {
+                strncpy(itemName, cat->names[originalIdx + cat->nameOffset], sizeof(itemName) - 1);
+                itemName[sizeof(itemName) - 1] = '\0';
+                capitalizeString(itemName);
+            } else {
+                snprintf(itemName, sizeof(itemName), "Item #%d", originalIdx + 1);
+            }
 
             const char* colors[] = {"All Colors", "Color 1", "Color 2", "Color 3", "Color 4", "Color 5", "Color 6", "Color 7", "Color 8"};
             char colorStr[512];
@@ -500,7 +608,13 @@ int main(int argc, char** argv) {
             int originalIdx = cat->filteredIndices[savedItemCursor];
             
             char itemName[128];
-            strncpy(itemName, cat->names[originalIdx + cat->nameOffset], sizeof(itemName) - 1);
+            if (cat->names != NULL) {
+                strncpy(itemName, cat->names[originalIdx + cat->nameOffset], sizeof(itemName) - 1);
+                itemName[sizeof(itemName) - 1] = '\0';
+                capitalizeString(itemName);
+            } else {
+                snprintf(itemName, sizeof(itemName), "Item #%d", originalIdx + 1);
+            }
             itemName[sizeof(itemName) - 1] = '\0';
             capitalizeString(itemName);
             
