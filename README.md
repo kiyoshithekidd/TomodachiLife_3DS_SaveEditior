@@ -6,7 +6,7 @@ A native 3DS homebrew application to edit Tomodachi Life save files (`savedataAr
 
 If you have a modded 3DS and just want to use the editor:
 
-1. **Download**: Grab the latest `TomodachiLife_3DS_SaveEditor.3dsx` from the [Releases](https://github.com/yourusername/repo/releases) page.
+1. **Download**: Grab the latest `TomodachiLife_3DS_SaveEditor.3dsx` from the [Releases](https://github.com/kiyoshithekidd/TomodachiLife_3DS_SaveEditior/releases) page.
 2. **Copy**: Put the `.3dsx` file into the `/3ds/` folder on your SD card.
 3. **Backup**: Use **Checkpoint** or **JKSM** to export a backup of your `savedataArc.txt` before editing.
 4. **Launch**: Open the Homebrew Launcher on your 3DS and select the Tomodachi Life Save Editor.
