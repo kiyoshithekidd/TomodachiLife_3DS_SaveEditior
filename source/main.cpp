@@ -52,6 +52,7 @@ struct CategoryInfo {
     int bytesPerItem;         // 1 for food/interiors/goods/treasures, 8 for clothes
     bool hasColors;           // true if items have color variants
     bool hasSpecialLogic;     // true if it uses the SpotPass/StreetPass scattered offsets
+    int maxItems;             // total number of items in the name list
     std::vector<int> filteredIndices;  // populated at init time
 };
 
@@ -67,6 +68,8 @@ void initCategory(CategoryInfo& cat, const char** names, int count, int offset, 
     cat.saveBase = saveBase;
     cat.bytesPerItem = bytesPerItem;
     cat.hasColors = hasColors;
+    cat.hasSpecialLogic = needsFiltering;
+    cat.maxItems = maxItems;
     cat.filteredIndices.clear();
     
     for (int i = 0; i < maxItems; i++) {
@@ -173,35 +176,29 @@ public:
 
 // ── Special Items Logic ──────────────────────────────────────────────
 
-void writeSpecialClothes(SafeFile* file, u8 val) {
-    struct Range { u32 start; u32 count; };
-    Range clothesRanges[] = {
-        {0x280, 16}, {0x2B8, 8}, {0x2C8, 8}, {0x2F8, 8}, {0x330, 5},
-        {0x460, 8}, {0x478, 5}, {0x4E0, 8}, {0x4F8, 8}, {0x518, 8},
-        {0x530, 8}, {0x568, 5}, {0x580, 8}, {0x5C8, 6}, {0x5D0, 6},
-        {0x5D8, 6}, {0x5E0, 6}, {0x618, 8}, {0x628, 8}, {0x6A8, 16},
-        {0x6E8, 8}, {0x770, 6}, {0x778, 8}, {0x790, 8}, {0x820, 8},
-        {0x840, 8}, {0x8C0, 8}, {0x8D0, 8}, {0x8F8, 8}, {0x948, 8},
-        {0x968, 8}, {0x998, 8}, {0x9A8, 8}, {0x9D8, 8}, {0x9E8, 8},
-        {0xA18, 8}, {0xA50, 32}, {0xAC0, 8}, {0xAD8, 5}, {0xAE8, 16}
-    };
-    u32 written = 0;
-    for (auto& r : clothesRanges) {
-        for (u32 i = 0; i < r.count; i++) {
-            file->write(r.start + i, &val, 1, &written);
-        }
-    }
-}
-
-void writeSpecialHats(SafeFile* file, u8 val) {
-    struct Range { u32 start; u32 count; };
-    Range hatRanges[] = {
-        {0xFF8, 8}, {0x1020, 8}, {0x1088, 8}, {0x1178, 6}, {0x11B0, 16}
-    };
-    u32 written = 0;
-    for (auto& r : hatRanges) {
-        for (u32 i = 0; i < r.count; i++) {
-            file->write(r.start + i, &val, 1, &written);
+void unlockSpecialItems(SafeFile* file, CategoryInfo* cat, u8 val) {
+    if (!cat->hasSpecialLogic) return;
+    
+    u32 bytesWritten = 0;
+    for (int i = 0; i < cat->maxItems; i++) {
+        if (cat->nameOffset + i >= cat->nameCount) break;
+        const char* name = cat->names[cat->nameOffset + i];
+        
+        bool isSpecial = false;
+        if (strstr(name, "Unknown_Item") != NULL) isSpecial = true;
+        if (strstr(name, "NSPthe")       != NULL) isSpecial = true;
+        if (strstr(name, "NPPthe")       != NULL) isSpecial = true;
+        if (strstr(name, "NSSthe")       != NULL) isSpecial = true;
+        if (strlen(name) > 60)           isSpecial = true;
+        
+        if (isSpecial) {
+            if (cat->hasColors) {
+                for (int c = 0; c < cat->bytesPerItem; c++) {
+                    file->write(cat->saveBase + (i * cat->bytesPerItem) + c, &val, 1, &bytesWritten);
+                }
+            } else {
+                file->write(cat->saveBase + (i * cat->bytesPerItem), &val, 1, &bytesWritten);
+            }
         }
     }
 }
@@ -259,7 +256,9 @@ int main(int argc, char** argv) {
     initServices();
 
     C3D_RenderTarget* topTarget = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
+    C3D_RenderTarget* bottomTarget = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
     C2D_TextBuf staticBuf = C2D_TextBufNew(4096);
+    C2D_TextBuf bottomBuf = C2D_TextBufNew(4096);
 
     // North American Tomodachi Life Title ID: 000400000008C300
     // Low ID: 0008C300, High ID: 00040000
@@ -275,6 +274,7 @@ int main(int argc, char** argv) {
     }
 
     char displayString[2048] = "Tomodachi Life Save Editor\n\n";
+    char bottomString[2048] = "";
     bool fileOpenSuccess = false;
     u32 currentMoney = 0;
     char islandNameUTF8[32] = {0};
@@ -377,8 +377,8 @@ int main(int argc, char** argv) {
                 else if (cursorIndex == 7) {
                     // Quick Action: Unlock All Special Items
                     if (fileOpenSuccess) {
-                        writeSpecialClothes(file.get(), 99);
-                        writeSpecialHats(file.get(), 99);
+                        unlockSpecialItems(file.get(), &categories[1], 99);
+                        unlockSpecialItems(file.get(), &categories[2], 99);
                         // Also unlock special foods if offset is known
                         // u8 val = 99;
                         // for (int i = 0; i < 40; i++) file->write(0x19A8 + i, &val, 1, &bytesRead);
@@ -511,6 +511,7 @@ int main(int argc, char** argv) {
         // ═══════════════════ RENDERING ═══════════════════
 
         C2D_TextBufClear(staticBuf);
+        C2D_TextBufClear(bottomBuf);
         
         if (currentState == STATE_MAIN_MENU) {
             u32 dollars = currentMoney / 100;
@@ -526,10 +527,7 @@ int main(int argc, char** argv) {
                 "%s Add Interiors\n"
                 "%s Add Goods\n"
                 "%s Add Treasures\n"
-                "%s Unlock All Special Items\n\n"
-                "Press A to select\n"
-                "In lists, press X to Unlock All\n"
-                "Press START to save & exit",
+                "%s Unlock All Special Items\n",
                 islandNameUTF8, dollars, cents,
                 (cursorIndex == 0) ? "->" : "  ",
                 (cursorIndex == 1) ? "->" : "  ",
@@ -539,6 +537,17 @@ int main(int argc, char** argv) {
                 (cursorIndex == 5) ? "->" : "  ",
                 (cursorIndex == 6) ? "->" : "  ",
                 (cursorIndex == 7) ? "->" : "  ");
+            if (cursorIndex == 7) {
+                snprintf(bottomString, sizeof(bottomString),
+                    "Press A to select\n"
+                    "Press START to save & exit\n\n"
+                    "WARNING: May corrupt fresh saves!\n"
+                    "Please have a backup save data.");
+            } else {
+                snprintf(bottomString, sizeof(bottomString),
+                    "Press A to select\n"
+                    "Press START to save & exit");
+            }
         }
         else if (currentState == STATE_MONEY_EDIT) {
             u32 dollars = currentMoney / 100;
@@ -547,13 +556,15 @@ int main(int argc, char** argv) {
                 snprintf(displayString, sizeof(displayString), 
                     "Money Editor\n\n"
                     "Island Name: %s\n"
-                    "> Current Money: $%lu.%02lu <\n\n"
+                    "> Current Money: $%lu.%02lu <\n",
+                    islandNameUTF8, dollars, cents);
+                snprintf(bottomString, sizeof(bottomString),
                     "Press A to add $100.00\n"
                     "Press Y to reset to $0.00\n"
-                    "Press B to go back",
-                    islandNameUTF8, dollars, cents);
+                    "Press B to go back");
             } else {
-                snprintf(displayString, sizeof(displayString), "Error: Save file not loaded.\n\nPress B to go back.");
+                snprintf(displayString, sizeof(displayString), "Error: Save file not loaded.\n");
+                snprintf(bottomString, sizeof(bottomString), "Press B to go back.");
             }
         }
         else if (currentState >= STATE_CATEGORY_FOOD && currentState <= STATE_CATEGORY_TREASURES) {
@@ -562,7 +573,7 @@ int main(int argc, char** argv) {
             int maxItems = (int)cat->filteredIndices.size();
             
             char listStr[2048] = {0};
-            snprintf(listStr, sizeof(listStr), "%s List (%d items)  B=Back\n", title, maxItems);
+            snprintf(listStr, sizeof(listStr), "%s List (%d items)\n\n", title, maxItems);
             
             for (int i = scrollOffset; i < scrollOffset + MAX_VISIBLE_ITEMS && i < maxItems; i++) {
                 int originalIdx = cat->filteredIndices[i];
@@ -580,6 +591,7 @@ int main(int argc, char** argv) {
                 strncat(listStr, temp, sizeof(listStr) - strlen(listStr) - 1);
             }
             snprintf(displayString, sizeof(displayString), "%s", listStr);
+            snprintf(bottomString, sizeof(bottomString), "Press A to select\nPress X to Unlock All\nPress B to go back");
         }
         else if (currentState == STATE_COLOR_SELECT) {
             CategoryInfo* cat = getCategoryForState(previousCategory);
@@ -602,6 +614,7 @@ int main(int argc, char** argv) {
                 strcat(colorStr, temp);
             }
             snprintf(displayString, sizeof(displayString), "%s", colorStr);
+            snprintf(bottomString, sizeof(bottomString), "Press A to select\nPress B to go back");
         }
         else if (currentState == STATE_QUANTITY_SELECT) {
             CategoryInfo* cat = getCategoryForState(previousCategory);
@@ -619,23 +632,40 @@ int main(int argc, char** argv) {
             capitalizeString(itemName);
             
             snprintf(displayString, sizeof(displayString), 
-                "Add Item:\n%s\n\nQuantity: %d\n\nUp/Down: +/- 1\nLeft/Right: +/- 10\nPress A to Confirm\nPress B to Cancel", 
+                "Add Item:\n%s\n\nQuantity: %d", 
                 itemName, quantityToGive);
+            snprintf(bottomString, sizeof(bottomString), 
+                "Up/Down: +/- 1\nLeft/Right: +/- 10\nPress A to Confirm\nPress B to Cancel");
         }
 
         C2D_Text infoText;
         C2D_TextParse(&infoText, staticBuf, displayString);
         C2D_TextOptimize(&infoText);
         
+        C2D_Text bottomText;
+        C2D_TextParse(&bottomText, bottomBuf, bottomString);
+        C2D_TextOptimize(&bottomText);
+        
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
+        
         C2D_TargetClear(topTarget, C2D_Color32(0, 0, 0, 255));
         C2D_SceneBegin(topTarget);
         C2D_DrawText(&infoText, C2D_WithColor, 10.0f, 10.0f, 0.5f, 0.5f, 0.5f, C2D_Color32(255, 255, 255, 255));
+        
+        C2D_TargetClear(bottomTarget, C2D_Color32(0, 0, 0, 255));
+        C2D_SceneBegin(bottomTarget);
+        float textW = 0, textH = 0;
+        C2D_TextGetDimensions(&bottomText, 0.5f, 0.5f, &textW, &textH);
+        float textX = (320.0f - textW) / 2.0f;
+        float textY = (240.0f - textH) / 2.0f;
+        C2D_DrawText(&bottomText, C2D_WithColor, textX, textY, 0.5f, 0.5f, 0.5f, C2D_Color32(255, 255, 255, 255));
+        
         C3D_FrameEnd(0);
     }
 
     // Free resources
     C2D_TextBufDelete(staticBuf);
+    C2D_TextBufDelete(bottomBuf);
     exitServices();
     
     return 0;
