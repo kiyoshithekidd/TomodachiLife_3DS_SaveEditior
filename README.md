@@ -6,7 +6,7 @@ A native 3DS homebrew application to edit Tomodachi Life save files (`savedataAr
 
 If you have a modded 3DS and just want to use the editor:
 
-1. **Download**: Grab the latest `TomodachiLife_3DS_SaveEditor.3dsx` from the [Releases](https://github.com/kiyoshithekidd/TomodachiLife_3DS_SaveEditior/releases) page.
+1. **Download**: Grab the latest `TomodachiLife_3DS_SaveEditor.3dsx` from the [Releases](https://github.com/yourusername/repo/releases) page.
 2. **Copy**: Put the `.3dsx` file into the `/3ds/` folder on your SD card.
 3. **Backup**: Use **Checkpoint** or **JKSM** to export a backup of your `savedataArc.txt` before editing.
 4. **Launch**: Open the Homebrew Launcher on your 3DS and select the Tomodachi Life Save Editor.
@@ -19,11 +19,11 @@ If you have a modded 3DS and just want to use the editor:
 | **Money** | Edit island funds | ✅ Working |
 | **Food** | 231 items (US) | ✅ Working |
 | **Clothes** | 447 items with 8 color variants | ✅ Working |
-| **Hats** | 171 items with 8 color variants | 🔧 In Progress |
-| **Interiors** | 102 room styles | 🔧 In Progress |
+| **Hats** | 171 items with 8 color variants | ✅ Working |
+| **Interiors** | 102 room styles | ✅ Working |
 | **Goods** | 18 useful items | ✅ Working |
-| **Treasures** | 166 collectible items | 🔧 In Progress |
-| **Special Unlock** | Bulk-unlock SpotPass/StreetPass items | CRITICAL BUG |
+| **Treasures** | 153 collectible items | ✅ Working |
+| **Special Unlock** | Bulk-unlock SpotPass/StreetPass items | 🚧 Disabled (WIP) |
 
 ### Controls
 - **D-Pad**: Navigate menus and lists
@@ -41,7 +41,7 @@ Unlike the legacy PC editor which only offered bulk "Unlock All", this editor le
 | Category | Save Offset | Bytes/Item |
 |----------|-------------|------------|
 | Clothes | `0x0030` | 8 (1 per color) |
-| Hats | `0x0E30` | 8 (1 per color) |
+| Hats | `0x0FF8` | 8 (1 per color) |
 | Interiors | `0x1778` | 1 |
 | Food | `0x17F0` | 1 |
 | Goods | `0x18F0` | 1 |
@@ -54,13 +54,20 @@ Unlike the legacy PC editor which only offered bulk "Unlock All", this editor le
 
 ## Known Issues
 
-- Interiors, Hats, and Treasures categories write to the save file but items may not appear in-game. Investigation ongoing.
-- 14 of 166 treasure names are placeholders (regional items without confirmed US names).
-- 5 of 102 interior names are placeholders.
+- **Special Unlock**: The "Unlock All Special Items" feature is temporarily disabled. The legacy editor wrote to non-contiguous memory gaps inside the clothing blocks; replicating this safely is still being investigated.
+- 5 of 102 interior names are still unknown regional items.
+- Save editor is US-region only. EU/JP/KR support is planned.
 
 ---
 
 ## Changelog
+
+### v0.4.0 — Inventory Offset Fixes (2026-05-11)
+- **Treasures fixed**: Rebuilt the treasure dataset using the true internal game IDs extracted directly from the RomFS dump. Items now map correctly (e.g. "Gold coin" no longer gives an hourglass).
+- **Interiors fixed**: Rebuilt the interiors dataset from the RomFS `Room_US_English_LZ.bin` file. Interior names now match the exact in-game order (e.g. "Rain" no longer gives "Arabian").
+- **Hats offset corrected**: Hat memory block base offset corrected from `0xE30` to `0xFF8`, and array start index corrected from `1431` to `2601` (the "bear hat"). Hats should now apply correctly.
+- **Treasures count updated**: Dataset count updated from 166 → 153 to reflect the verified US item list.
+- **Special Unlock disabled**: The "Unlock All Special Items" feature is temporarily disabled to prevent save file corruption on fresh saves. The bottom screen now shows a clear "NOT WORKING (WIP)" notice when hovering over this option.
 
 ### v0.3.0 — Inventory Overhaul (2026-05-04)
 - **Granular quantity control**: Choose 1–99 for any item instead of bulk "Unlock All"

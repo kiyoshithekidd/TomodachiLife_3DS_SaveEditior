@@ -307,9 +307,9 @@ int main(int argc, char** argv) {
     // Clothes: standard block at 0x30+(ID*8)
     initCategory(categories[1], CLOTHES_NAMES, CLOTHES_COUNT, 984, 447,
                  0x30, 8, true, true);
-    // Hats: standard block at 0xE30+(ID*8)
-    initCategory(categories[2], CLOTHES_NAMES, CLOTHES_COUNT, 1431, 171,
-                 0xE30, 8, true, true);
+    // Hats: standard block at 0xFF8+(ID*8)
+    initCategory(categories[2], CLOTHES_NAMES, CLOTHES_COUNT, 2601, 171,
+                 0xFF8, 8, true, true);
     // Interiors: save at 0x1778+ID, 102 items (US)
     initCategory(categories[3], INTERIORS_NAMES, INTERIORS_COUNT, 0, INTERIORS_COUNT,
                  0x1778, 1, false, false);
@@ -376,13 +376,14 @@ int main(int argc, char** argv) {
                 }
                 else if (cursorIndex == 7) {
                     // Quick Action: Unlock All Special Items
+                    // DISABLED: The legacy editor wrote to gaps inside the regular clothes blocks,
+                    // which corrupts new save files. We will keep this disabled until a safer method is found.
+                    /*
                     if (fileOpenSuccess) {
                         unlockSpecialItems(file.get(), &categories[1], 99);
                         unlockSpecialItems(file.get(), &categories[2], 99);
-                        // Also unlock special foods if offset is known
-                        // u8 val = 99;
-                        // for (int i = 0; i < 40; i++) file->write(0x19A8 + i, &val, 1, &bytesRead);
                     }
+                    */
                 }
             }
         }
@@ -541,6 +542,7 @@ int main(int argc, char** argv) {
                 snprintf(bottomString, sizeof(bottomString),
                     "Press A to select\n"
                     "Press START to save & exit\n\n"
+                    "NOTE: Currently NOT WORKING (WIP)\n"
                     "WARNING: May corrupt fresh saves!\n"
                     "Please have a backup save data.");
             } else {
