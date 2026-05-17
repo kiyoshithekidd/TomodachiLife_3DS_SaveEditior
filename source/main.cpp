@@ -44,6 +44,15 @@ enum MenuState {
 // ── Category Info ────────────────────────────────────────────────────
 // Stores everything needed for a category: its name list, save offsets, etc.
 
+// Global variables for Region Support
+enum SaveRegion {
+    REGION_US = 0,
+    REGION_EU = 1,
+    REGION_JP = 2,
+    REGION_KR = 3
+};
+SaveRegion currentRegion = REGION_US;
+
 struct CategoryInfo {
     const char** names;       // pointer to the name array
     int nameCount;            // total items in the name array 
@@ -107,6 +116,15 @@ const char* getTitleForState(MenuState state) {
         case STATE_CATEGORY_GOODS:     return "Goods";
         case STATE_CATEGORY_TREASURES: return "Treasures";
         default:                       return "Items";
+    }
+}
+
+void updateRegionOffsets() {
+    switch (currentRegion) {
+        case REGION_US: categories[2].saveBase = 0x15F8; break;
+        case REGION_EU: categories[2].saveBase = 0xFF8; break;
+        // The JP and KR offsets can be defined later. For now default to US
+        default: categories[2].saveBase = 0x15F8; break;
     }
 }
 
@@ -305,11 +323,13 @@ int main(int argc, char** argv) {
     initCategory(categories[0], FOOD_NAMES, FOOD_COUNT, 0, FOOD_COUNT,
                  0x17F0, 1, false, false);
     // Clothes: standard block at 0x30+(ID*8)
-    initCategory(categories[1], CLOTHES_NAMES, CLOTHES_COUNT, 984, 447,
+    // Offset 986 aligns the MSBT strings correctly with the save memory array bounds
+    initCategory(categories[1], CLOTHES_NAMES, CLOTHES_COUNT, 986, 447,
                  0x30, 8, true, true);
-    // Hats: standard block at 0xFF8+(ID*8)
+    // Hats: standard block at 0x15F8+(ID*8) for US
     initCategory(categories[2], CLOTHES_NAMES, CLOTHES_COUNT, 2601, 171,
-                 0xFF8, 8, true, true);
+                 0x15F8, 8, true, true);
+    updateRegionOffsets();
     // Interiors: save at 0x1778+ID, 102 items (US)
     initCategory(categories[3], INTERIORS_NAMES, INTERIORS_COUNT, 0, INTERIORS_COUNT,
                  0x1778, 1, false, false);
@@ -385,6 +405,15 @@ int main(int argc, char** argv) {
                     }
                     */
                 }
+            }
+            
+            // Region Toggle logic
+            if (kDown & KEY_L) {
+                currentRegion = (currentRegion == REGION_US) ? REGION_EU : REGION_US;
+                updateRegionOffsets();
+            } else if (kDown & KEY_R) {
+                currentRegion = (currentRegion == REGION_EU) ? REGION_US : REGION_EU;
+                updateRegionOffsets();
             }
         }
         else if (currentState == STATE_MONEY_EDIT) {
@@ -517,8 +546,9 @@ int main(int argc, char** argv) {
         if (currentState == STATE_MAIN_MENU) {
             u32 dollars = currentMoney / 100;
             u32 cents = currentMoney % 100;
+            const char* regionName = (currentRegion == REGION_US) ? "US" : "EU";
             snprintf(displayString, sizeof(displayString), 
-                "Tomodachi Life Save Editor\n\n"
+                "Tomodachi Life Save Editor (Region: %s)\n\n"
                 "Island: %s\n"
                 "Money: $%lu.%02lu\n\n"
                 "%s Edit Money\n"
@@ -529,7 +559,7 @@ int main(int argc, char** argv) {
                 "%s Add Goods\n"
                 "%s Add Treasures\n"
                 "%s Unlock All Special Items\n",
-                islandNameUTF8, dollars, cents,
+                regionName, islandNameUTF8, dollars, cents,
                 (cursorIndex == 0) ? "->" : "  ",
                 (cursorIndex == 1) ? "->" : "  ",
                 (cursorIndex == 2) ? "->" : "  ",
@@ -540,14 +570,14 @@ int main(int argc, char** argv) {
                 (cursorIndex == 7) ? "->" : "  ");
             if (cursorIndex == 7) {
                 snprintf(bottomString, sizeof(bottomString),
-                    "Press A to select\n"
+                    "Press A to select | L/R to switch Region\n"
                     "Press START to save & exit\n\n"
                     "NOTE: Currently NOT WORKING (WIP)\n"
                     "WARNING: May corrupt fresh saves!\n"
                     "Please have a backup save data.");
             } else {
                 snprintf(bottomString, sizeof(bottomString),
-                    "Press A to select\n"
+                    "Press A to select | L/R to switch Region\n"
                     "Press START to save & exit");
             }
         }
