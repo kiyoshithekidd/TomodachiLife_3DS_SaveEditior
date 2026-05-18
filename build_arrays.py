@@ -6,12 +6,10 @@ def build_treasures():
     csv_path = r'c:\Users\Kiyos\Documents\Antigravity_Projects\Tomodachi_Life_Save_Editor\TomodachiLife_3DS_SaveEditor\scratch\treasures.csv'
     out_path = r'c:\Users\Kiyos\Documents\Antigravity_Projects\Tomodachi_Life_Save_Editor\TomodachiLife_3DS_SaveEditor\include\treasures_dataset.h'
     
-    items = []
     with open(csv_path, 'r', encoding='utf-8') as f:
         content = f.read()
         
-    # Manual parsing of treasures.csv to extract Column 2
-    # Format: Name,Col1,Col2,...
+    # Manual parsing of treasures.csv to extract columns
     rows = []
     current_row = []
     current_field = ""
@@ -35,30 +33,48 @@ def build_treasures():
         current_row.append(current_field.strip())
         rows.append(current_row)
         
-    for row in rows:
-        if len(row) > 2 and row[2].isdigit():
-            name = row[0].replace('"', '').split('\n')[0].strip()
-            name = name.split(' (')[0] # Remove region tags like (US)
-            idx = int(row[2])
-            items.append((idx, name))
-            
-    # Pad array up to max index
-    if not items:
-        return
-        
-    max_idx = max(idx for idx, name in items)
+    items_us = []
+    items_eu = []
     
-    # Is it 1-based or 0-based? Let's assume 0-based array in C++
-    # So if Gold coin is 57, and Hourglass is 64
-    final_array = [f"Unknown_{i}" for i in range(max_idx + 1)]
-    for idx, name in items:
-        final_array[idx] = name
-        
+    for row in rows:
+        if len(row) > 2:
+            # First clean name: remove quotes and grab first line
+            name = row[0].replace('"', '').split('\n')[0].strip()
+            name = name.split(' (')[0] # Remove region tags
+            
+            us_idx_str = row[1]
+            eu_idx_str = row[2]
+            
+            if us_idx_str.isdigit():
+                items_us.append((int(us_idx_str), name))
+            if eu_idx_str.isdigit():
+                items_eu.append((int(eu_idx_str), name))
+                
+    # Standard save block is 166 bytes (0 to 165)
+    # The indexes in CSV are 1-based, so Slot 0 corresponds to CSV Index 1
+    arr_len = 166
+    
+    final_us = [f"Unknown_{i}" for i in range(arr_len)]
+    for idx, name in items_us:
+        if 0 <= idx - 1 < arr_len:
+            final_us[idx - 1] = name
+            
+    final_eu = [f"Unknown_{i}" for i in range(arr_len)]
+    for idx, name in items_eu:
+        if 0 <= idx - 1 < arr_len:
+            final_eu[idx - 1] = name
+            
     with open(out_path, 'w', encoding='utf-8') as f:
         f.write("#pragma once\n\n")
-        f.write(f"const int TREASURES_COUNT = {len(final_array)};\n")
-        f.write("const char* TREASURES_NAMES[] = {\n")
-        for s in final_array:
+        f.write(f"const int TREASURES_COUNT = {arr_len};\n")
+        
+        f.write("const char* TREASURES_NAMES_US[] = {\n")
+        for s in final_us:
+            f.write(f'    "{s}",\n')
+        f.write("};\n\n")
+        
+        f.write("const char* TREASURES_NAMES_EU[] = {\n")
+        for s in final_eu:
             f.write(f'    "{s}",\n')
         f.write("};\n")
 
@@ -69,7 +85,6 @@ def build_interiors():
     with open(room_data, 'r', encoding='utf-8') as f:
         lines = f.readlines()
         
-    # Extract the block starting from 'empty' (line 244) for 102 items
     start_idx = -1
     names = []
     for i, line in enumerate(lines):
