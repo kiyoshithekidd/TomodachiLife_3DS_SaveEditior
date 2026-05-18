@@ -338,7 +338,6 @@ int main(int argc, char** argv) {
     // Hats: standard block at 0x15F8+(ID*8) for US
     initCategory(categories[2], CLOTHES_NAMES, CLOTHES_COUNT, 2601, 171,
                  0x15F8, 8, true, true);
-    updateRegionOffsets();
     // Interiors: save at 0x1778+ID, 102 items (US)
     initCategory(categories[3], INTERIORS_NAMES, INTERIORS_COUNT, 0, INTERIORS_COUNT,
                  0x1778, 1, false, false);
@@ -348,6 +347,9 @@ int main(int argc, char** argv) {
     // Treasures: save at 0x1902+ID, 166 items (US)
     initCategory(categories[5], TREASURES_NAMES_US, TREASURES_COUNT, 0, TREASURES_COUNT,
                  0x1902, 1, false, false);
+                 
+    // Update offsets and names based on the current region
+    updateRegionOffsets();
 
     // ── State variables ──────────────────────────────────────────────
     MenuState currentState = STATE_MAIN_MENU;
