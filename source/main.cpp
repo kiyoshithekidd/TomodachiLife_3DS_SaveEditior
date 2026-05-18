@@ -121,10 +121,19 @@ const char* getTitleForState(MenuState state) {
 
 void updateRegionOffsets() {
     switch (currentRegion) {
-        case REGION_US: categories[2].saveBase = 0x15F8; break;
-        case REGION_EU: categories[2].saveBase = 0xFF8; break;
+        case REGION_US:
+            categories[2].saveBase = 0x15F8;
+            categories[5].names = TREASURES_NAMES_US;
+            break;
+        case REGION_EU:
+            categories[2].saveBase = 0xFF8;
+            categories[5].names = TREASURES_NAMES_EU;
+            break;
         // The JP and KR offsets can be defined later. For now default to US
-        default: categories[2].saveBase = 0x15F8; break;
+        default:
+            categories[2].saveBase = 0x15F8;
+            categories[5].names = TREASURES_NAMES_US;
+            break;
     }
 }
 
@@ -337,7 +346,7 @@ int main(int argc, char** argv) {
     initCategory(categories[4], GOODS_NAMES, GOODS_COUNT, 0, GOODS_COUNT,
                  0x18F0, 1, false, false);
     // Treasures: save at 0x1902+ID, 166 items (US)
-    initCategory(categories[5], TREASURES_NAMES, TREASURES_COUNT, 0, TREASURES_COUNT,
+    initCategory(categories[5], TREASURES_NAMES_US, TREASURES_COUNT, 0, TREASURES_COUNT,
                  0x1902, 1, false, false);
 
     // ── State variables ──────────────────────────────────────────────
