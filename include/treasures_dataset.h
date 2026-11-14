@@ -1,6 +1,6 @@
 #pragma once
 
-const int TREASURES_COUNT = 166;
+const int TREASURES_COUNT = 152;
 
 const char* TREASURES_NAMES_US[] = {
     "Abacus",
@@ -155,20 +155,6 @@ const char* TREASURES_NAMES_US[] = {
     "Silver trophy",
     "Gold trophy",
     "Platinum trophy",
-    "Unknown_152",
-    "Unknown_153",
-    "Unknown_154",
-    "Unknown_155",
-    "Unknown_156",
-    "Unknown_157",
-    "Unknown_158",
-    "Unknown_159",
-    "Unknown_160",
-    "Unknown_161",
-    "Unknown_162",
-    "Unknown_163",
-    "Unknown_164",
-    "Unknown_165",
 };
 
 const char* TREASURES_NAMES_EU[] = {
@@ -324,18 +310,4 @@ const char* TREASURES_NAMES_EU[] = {
     "Silver trophy",
     "Gold trophy",
     "Platinum trophy",
-    "Unknown_152",
-    "Unknown_153",
-    "Unknown_154",
-    "Unknown_155",
-    "Unknown_156",
-    "Unknown_157",
-    "Unknown_158",
-    "Unknown_159",
-    "Unknown_160",
-    "Unknown_161",
-    "Unknown_162",
-    "Unknown_163",
-    "Unknown_164",
-    "Unknown_165",
 };

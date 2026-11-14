@@ -1,0 +1,31 @@
+name: Build 3DSX
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build TomodachiLife_3DS_SaveEditor.3dsx
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitarm:latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Clean & Build .3dsx
+        run: |
+          make clean
+          make -j$(nproc --all)
+          ls -lh TomodachiLife_3DS_SaveEditor.3dsx
+
+      - name: Upload .3dsx Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TomodachiLife_3DS_SaveEditor
+          path: TomodachiLife_3DS_SaveEditor.3dsx
