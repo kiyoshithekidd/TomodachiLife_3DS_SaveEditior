@@ -5,6 +5,7 @@
 *.o
 *.d
 build/
+romfs/
 
 # Logs and Temp files
 build_log.txt

@@ -553,6 +553,44 @@ void exitServices() {
     hidExit();
 }
 
+// ── Sprite Atlas Indices (must match gfx/sprites.t3s order) ────────────
+
+enum SpriteIndex {
+    SPR_BANNER_LOGO = 0,
+    SPR_TOP_BG,
+    SPR_BOTTOM_BG,
+    SPR_ICON_MONEY,
+    SPR_ICON_FOOD,
+    SPR_ICON_CLOTHES,
+    SPR_ICON_HATS,
+    SPR_ICON_INTERIORS,
+    SPR_ICON_GOODS,
+    SPR_ICON_TREASURES,
+    SPR_ICON_SPECIAL,
+    SPR_BADGE_US,
+    SPR_BADGE_EU,
+    SPR_BADGE_JP,
+    SPR_BADGE_KR,
+    SPR_BADGE_CARTRIDGE,
+    SPR_BADGE_SD,
+    SPR_BADGE_BACKUP_OK,
+    SPR_CURSOR_HAND,
+    SPR_ROW_NORMAL,
+    SPR_ROW_SELECTED,
+    SPR_BTN_STEPPER,
+    SPR_COLOR_SWATCH_RING,
+    SPR_MODAL_ERROR,
+    SPR_COUNT
+};
+
+static inline void drawSprite(C2D_SpriteSheet sheet, size_t idx, float x, float y,
+                              float scaleX = 1.0f, float scaleY = 1.0f,
+                              const C2D_ImageTint* tint = nullptr) {
+    if (sheet != nullptr && idx < C2D_SpriteSheetCount(sheet)) {
+        C2D_DrawImageAt(C2D_SpriteSheetGetImage(sheet, idx), x, y, 0.5f, tint, scaleX, scaleY);
+    }
+}
+
 // ── Main ─────────────────────────────────────────────────────────────
 
 int main(int argc, char** argv) {
@@ -562,6 +600,7 @@ int main(int argc, char** argv) {
     C3D_RenderTarget* bottomTarget = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
     C2D_TextBuf staticBuf = C2D_TextBufNew(4096);
     C2D_TextBuf bottomBuf = C2D_TextBufNew(4096);
+    C2D_SpriteSheet spriteSheet = C2D_SpriteSheetLoad("romfs:/gfx/sprites.t3x");
 
     g_backupCreated = false;
     snprintf(g_backupStatus, sizeof(g_backupStatus), "Standby (Before 1st Edit)");
@@ -1057,26 +1096,97 @@ int main(int argc, char** argv) {
         C2D_TextOptimize(&bottomText);
         
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
-        
-        C2D_TargetClear(topTarget, C2D_Color32(0, 0, 0, 255));
+
+        const u32 colSkyBlue  = C2D_Color32(110, 198, 255, 255);
+        const u32 colCream    = C2D_Color32(255, 253, 245, 232);
+        const u32 colSand     = C2D_Color32(215, 204, 200, 255);
+        const u32 colTextDark = C2D_Color32(62, 39, 35, 255);
+
+        // ── Top Screen (400x240) ─────────────────────────────────────
+        C2D_TargetClear(topTarget, colSkyBlue);
         C2D_SceneBegin(topTarget);
-        C2D_DrawText(&infoText, C2D_WithColor, 10.0f, 10.0f, 0.5f, 0.5f, 0.5f, C2D_Color32(255, 255, 255, 255));
-        
-        C2D_TargetClear(bottomTarget, C2D_Color32(0, 0, 0, 255));
+        drawSprite(spriteSheet, SPR_TOP_BG, 0.0f, 0.0f);
+
+        if (!fileOpenSuccess) {
+            drawSprite(spriteSheet, SPR_MODAL_ERROR, 40.0f, 36.0f);
+            C2D_DrawText(&infoText, C2D_WithColor, 54.0f, 72.0f, 0.5f, 0.48f, 0.48f, colTextDark);
+        } else {
+            // Warm Notebook Cream card container with Soft Sand border
+            C2D_DrawRectSolid(7.0f, 5.0f, 0.2f, 386.0f, 230.0f, colSand);
+            C2D_DrawRectSolid(8.0f, 6.0f, 0.3f, 384.0f, 228.0f, colCream);
+
+            if (currentState == STATE_MAIN_MENU) {
+                // Region, Media Source, and Backup badges at top-right
+                size_t regBadge = SPR_BADGE_US;
+                if (currentRegion == REGION_EU) regBadge = SPR_BADGE_EU;
+                else if (currentRegion == REGION_JP) regBadge = SPR_BADGE_JP;
+                else if (currentRegion == REGION_KR) regBadge = SPR_BADGE_KR;
+                drawSprite(spriteSheet, regBadge, 346.0f, 10.0f);
+
+                bool isCart = (strncmp(saveSourceDesc, "Cartridge", 9) == 0);
+                drawSprite(spriteSheet, isCart ? SPR_BADGE_CARTRIDGE : SPR_BADGE_SD, 322.0f, 9.0f);
+                if (g_backupCreated) {
+                    drawSprite(spriteSheet, SPR_BADGE_BACKUP_OK, 298.0f, 9.0f);
+                }
+
+                // Active category shop icon preview & hand cursor
+                drawSprite(spriteSheet, SPR_ICON_MONEY + (size_t)cursorIndex, 344.0f, 186.0f, 1.25f, 1.25f);
+                drawSprite(spriteSheet, SPR_CURSOR_HAND, 318.0f, 194.0f, 0.9f, 0.9f);
+            } else if (currentState == STATE_MONEY_EDIT) {
+                drawSprite(spriteSheet, SPR_ICON_MONEY, 352.0f, 10.0f, 1.0f, 1.0f);
+            } else if (currentState >= STATE_CATEGORY_FOOD && currentState <= STATE_CATEGORY_TREASURES) {
+                size_t catIcon = SPR_ICON_FOOD + (size_t)(currentState - STATE_CATEGORY_FOOD);
+                drawSprite(spriteSheet, catIcon, 352.0f, 10.0f, 1.0f, 1.0f);
+            } else if (currentState == STATE_COLOR_SELECT) {
+                static const u32 swatchColors[8] = {
+                    C2D_Color32(239, 83, 80, 255),   // Color 1
+                    C2D_Color32(66, 165, 245, 255),  // Color 2
+                    C2D_Color32(102, 187, 106, 255), // Color 3
+                    C2D_Color32(255, 213, 79, 255),  // Color 4
+                    C2D_Color32(171, 71, 188, 255),  // Color 5
+                    C2D_Color32(255, 167, 38, 255),  // Color 6
+                    C2D_Color32(141, 110, 99, 255),  // Color 7
+                    C2D_Color32(96, 125, 139, 255)   // Color 8
+                };
+                CategoryInfo* cat = getCategoryForState(previousCategory);
+                int originalIdx = cat->filteredIndices[savedItemCursor];
+                int validColors = getValidColorCount(cat, originalIdx);
+                for (int c = 0; c < validColors && c < 8; c++) {
+                    C2D_ImageTint tint;
+                    C2D_PlainImageTint(&tint, swatchColors[c], 0.85f);
+                    drawSprite(spriteSheet, SPR_COLOR_SWATCH_RING, 150.0f, 70.0f + (c * 15.0f), 0.9f, 0.9f, &tint);
+                }
+            }
+
+            C2D_DrawText(&infoText, C2D_WithColor, 14.0f, 10.0f, 0.6f, 0.5f, 0.5f, colTextDark);
+        }
+
+        // ── Bottom Screen (320x240) ──────────────────────────────────
+        C2D_TargetClear(bottomTarget, colCream);
         C2D_SceneBegin(bottomTarget);
+        drawSprite(spriteSheet, SPR_BOTTOM_BG, 0.0f, 0.0f);
+        drawSprite(spriteSheet, SPR_BANNER_LOGO, 32.0f, 34.0f);
+
+        // Cream control card in lower half
+        C2D_DrawRectSolid(15.0f, 104.0f, 0.2f, 290.0f, 100.0f, colSand);
+        C2D_DrawRectSolid(16.0f, 105.0f, 0.3f, 288.0f, 98.0f, colCream);
+
         float textW = 0, textH = 0;
         C2D_TextGetDimensions(&bottomText, 0.5f, 0.5f, &textW, &textH);
         float textX = (320.0f - textW) / 2.0f;
-        float textY = (240.0f - textH) / 2.0f;
-        C2D_DrawText(&bottomText, C2D_WithColor, textX, textY, 0.5f, 0.5f, 0.5f, C2D_Color32(255, 255, 255, 255));
-        
+        float textY = 105.0f + (98.0f - textH) / 2.0f;
+        C2D_DrawText(&bottomText, C2D_WithColor, textX, textY, 0.6f, 0.5f, 0.5f, colTextDark);
+
         C3D_FrameEnd(0);
     }
 
     // Free resources
+    if (spriteSheet != nullptr) {
+        C2D_SpriteSheetFree(spriteSheet);
+    }
     C2D_TextBufDelete(staticBuf);
     C2D_TextBufDelete(bottomBuf);
     exitServices();
-    
+
     return 0;
 }

@@ -77,6 +77,14 @@ If you have a modded 3DS and want to use the editor:
 
 ## Changelog
 
+### v0.7.0 — Visual Assets & *Tomodachi Life* UI Overhaul (2026-11-14)
+- **Custom 3DS Homebrew Icon (`icon.png`)**: Embedded a custom `48×48` *Tomodachi Life* island tower icon into the `.3dsx` SMDH metadata (`#28`).
+- **`tex3ds` Sprite Atlas (`romfs:/gfx/sprites.t3x`)**: Added 24 custom PNG sprites compiled into RomFS via `tex3ds` (`#40`), including:
+  - Daylight *Tomodachi Life* island vista top backdrop (`400×240`) and polka-dot bottom backdrop (`320×240`) with title banner logo (`256×64`).
+  - Warm Notebook Cream cards (`#FFFDF5`) with Charcoal Espresso text (`#3E2723`) and Soft Sand borders (`#D7CCC8`).
+  - 8 custom shop category icons (`Money`, `Food`, `Clothes`, `Hats`, `Interiors`, `Goods`, `Treasures`, `Special Unlock`) + pointing hand cursor.
+  - Regional pill badges (`US`, `EU`, `JP`, `KR`), save source badges (`Cartridge` vs. `SD`), green `Backup OK` shield badge, error modal frame, and `C2D_ImageTint` color swatch rings in the Color Selector.
+
 ### v0.6.0 — Complete QA Overhaul, Safe Special Unlocks & Multi-Region Detection (2026-11-14)
 - **Fixed US Hats Base Offset (`#29`, `#20`)**: Corrected US Hats `saveBase` in `updateRegionOffsets()` from `0xE30` (SpotPass Clothes area) to `0xFF8`.
 - **Fixed Clothes & Hats MSBT Name Alignment (`#30`, `#19`, `#24`)**: Corrected `clothes_dataset.h` 0-based start indices to `984` (`"regular clothes"`, 447 items) and `2600` (`"bear hat"`, 219 items), eliminating the off-by-one shift across every clothing and hat item.
