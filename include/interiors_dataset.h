@@ -2,8 +2,6 @@
 
 const int INTERIORS_COUNT = 102;
 const char* INTERIORS_NAMES[] = {
-    "empty",
-    "Unknown_9",
     "children's",
     "floral",
     "Arabian",
@@ -104,4 +102,6 @@ const char* INTERIORS_NAMES[] = {
     "art gallery",
     "Unknown_108",
     "campfire",
+    "fairy-tale castle",
+    "cinema",
 };
