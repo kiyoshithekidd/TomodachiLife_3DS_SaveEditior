@@ -8,6 +8,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build TomodachiLife_3DS_SaveEditor.3dsx
@@ -29,3 +32,9 @@ jobs:
         with:
           name: TomodachiLife_3DS_SaveEditor
           path: TomodachiLife_3DS_SaveEditor.3dsx
+
+      - name: Upload .3dsx to GitHub Release on Tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: TomodachiLife_3DS_SaveEditor.3dsx
