@@ -1,0 +1,25 @@
+--atlas -f rgba8888 -z auto
+banner_logo.png
+bg/top_bg.png
+bg/bottom_bg.png
+icons/icon_money.png
+icons/icon_food.png
+icons/icon_clothes.png
+icons/icon_hats.png
+icons/icon_interiors.png
+icons/icon_goods.png
+icons/icon_treasures.png
+icons/icon_special.png
+badges/badge_region_us.png
+badges/badge_region_eu.png
+badges/badge_region_jp.png
+badges/badge_region_kr.png
+badges/badge_cartridge.png
+badges/badge_sd.png
+badges/badge_backup_ok.png
+ui/cursor_hand.png
+ui/row_normal.png
+ui/row_selected.png
+ui/btn_stepper.png
+ui/color_swatch_ring.png
+ui/modal_error.png
