@@ -115,29 +115,29 @@ const u8 CLOTHES_COLOR_COUNTS_EU[447] = {
 };
 
 const u8 HATS_COLOR_COUNTS_US[219] = {
-    8, 8, 8, 8, 8, 8, 1, 8, 6, 8, 1, 1, 6, 6, 1, 1, 1, 8, 1, 1, 1, 1, 1, 1,
-    1, 8, 8, 1, 1, 1, 1, 1, 8, 1, 8, 1, 1, 1, 8, 1, 8, 8, 8, 6, 5, 6, 4, 6,
-    8, 8, 8, 8, 8, 1, 8, 8, 8, 8, 7, 8, 8, 7, 7, 8, 5, 8, 7, 6, 8, 8, 8, 8,
-    1, 8, 8, 8, 6, 1, 8, 8, 8, 8, 8, 7, 6, 8, 7, 8, 8, 8, 8, 8, 8, 8, 8, 7,
-    7, 8, 8, 8, 6, 7, 8, 8, 8, 8, 8, 7, 7, 8, 5, 8, 6, 1, 1, 6, 8, 8, 8, 7,
-    8, 6, 8, 8, 8, 7, 7, 6, 8, 7, 1, 5, 5, 8, 1, 8, 5, 4, 8, 4, 7, 6, 8, 1,
-    1, 1, 1, 8, 8, 8, 8, 8, 8, 1, 1, 8, 1, 8, 4, 6, 6, 1, 7, 7, 6, 1, 1, 8,
-    1, 1, 1, 8, 8, 6, 6, 8, 7, 5, 7, 1, 5, 1, 1, 8, 1, 7, 7, 1, 8, 8, 1, 1,
-    8, 1, 1, 1, 6, 1, 1, 1, 1, 1, 1, 6, 1, 1, 7, 6, 6, 6, 6, 1, 6, 5, 5, 1,
-    7, 1, 8,
+    8, 8, 8, 8, 8, 8, 0, 8, 6, 8, 0, 0, 6, 6, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0,
+    0, 8, 8, 0, 0, 0, 0, 0, 8, 0, 8, 0, 0, 0, 8, 0, 8, 8, 8, 6, 5, 6, 4, 6,
+    8, 8, 8, 8, 8, 0, 8, 8, 8, 8, 7, 8, 8, 7, 7, 8, 5, 8, 7, 6, 8, 8, 8, 8,
+    0, 8, 8, 8, 6, 1, 8, 8, 8, 8, 8, 7, 6, 8, 7, 8, 8, 8, 8, 8, 8, 8, 8, 7,
+    7, 8, 8, 8, 6, 7, 8, 8, 8, 8, 8, 7, 7, 8, 5, 8, 6, 0, 0, 6, 8, 8, 8, 7,
+    8, 6, 8, 8, 8, 7, 7, 6, 8, 7, 0, 5, 5, 8, 0, 8, 5, 4, 8, 4, 7, 6, 8, 0,
+    0, 0, 0, 8, 8, 8, 8, 8, 8, 0, 0, 8, 0, 8, 4, 6, 6, 0, 7, 7, 6, 0, 0, 8,
+    1, 0, 0, 8, 8, 6, 6, 8, 7, 5, 7, 0, 5, 0, 0, 8, 0, 7, 7, 0, 8, 8, 0, 0,
+    8, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 6, 0, 0, 7, 6, 6, 6, 6, 0, 6, 5, 5, 0,
+    7, 0, 8,
 };
 
 const u8 HATS_COLOR_COUNTS_EU[219] = {
-    8, 8, 8, 8, 7, 8, 1, 8, 6, 8, 1, 1, 6, 6, 1, 1, 1, 1, 8, 1, 1, 1, 1, 1,
-    1, 1, 8, 8, 1, 1, 1, 8, 1, 8, 1, 1, 1, 8, 1, 8, 8, 8, 6, 5, 6, 4, 6, 8,
-    6, 8, 8, 8, 8, 1, 8, 8, 8, 8, 7, 8, 8, 7, 7, 8, 5, 8, 7, 6, 8, 8, 8, 8,
-    1, 8, 8, 8, 6, 1, 8, 8, 8, 8, 8, 7, 6, 8, 7, 8, 8, 8, 8, 8, 8, 8, 8, 7,
-    7, 8, 8, 8, 6, 7, 8, 8, 8, 8, 8, 7, 7, 8, 5, 8, 6, 1, 1, 6, 8, 8, 8, 7,
-    8, 6, 8, 8, 8, 7, 7, 6, 8, 7, 1, 5, 5, 8, 1, 8, 5, 4, 8, 4, 6, 6, 8, 1,
-    1, 1, 1, 8, 8, 8, 8, 8, 8, 1, 1, 8, 1, 8, 4, 6, 6, 1, 7, 7, 6, 1, 1, 8,
-    1, 1, 1, 8, 8, 6, 6, 5, 7, 5, 7, 1, 5, 1, 1, 8, 1, 7, 7, 1, 8, 8, 1, 1,
-    8, 1, 1, 1, 6, 1, 1, 1, 1, 1, 1, 6, 1, 1, 7, 6, 6, 6, 6, 1, 6, 5, 5, 1,
-    7, 1, 8,
+    8, 8, 8, 8, 7, 8, 0, 8, 6, 8, 0, 0, 6, 6, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0,
+    0, 0, 8, 8, 0, 0, 0, 8, 0, 8, 0, 0, 0, 8, 0, 8, 8, 8, 6, 5, 6, 4, 6, 8,
+    6, 8, 8, 8, 8, 0, 8, 8, 8, 8, 7, 8, 8, 7, 7, 8, 5, 8, 7, 6, 8, 8, 8, 8,
+    0, 8, 8, 8, 6, 1, 8, 8, 8, 8, 8, 7, 6, 8, 7, 8, 8, 8, 8, 8, 8, 8, 8, 7,
+    7, 8, 8, 8, 6, 7, 8, 8, 8, 8, 8, 7, 7, 8, 5, 8, 6, 0, 0, 6, 8, 8, 8, 7,
+    8, 6, 8, 8, 8, 7, 7, 6, 8, 7, 0, 5, 5, 8, 0, 8, 5, 4, 8, 4, 6, 6, 8, 0,
+    0, 0, 0, 8, 8, 8, 8, 8, 8, 0, 0, 8, 0, 8, 4, 6, 6, 0, 7, 7, 6, 0, 0, 8,
+    1, 0, 0, 8, 8, 6, 6, 5, 7, 5, 7, 0, 5, 0, 0, 8, 0, 7, 7, 0, 8, 8, 0, 0,
+    8, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 6, 0, 0, 7, 6, 6, 6, 6, 0, 6, 5, 5, 0,
+    7, 0, 8,
 };
 
 CategoryInfo categories[10]; // FOOD, CLOTHES, HATS, INTERIORS, GOODS, TREASURES, SPECIAL_FOOD
@@ -148,7 +148,7 @@ int getValidColorCount(const CategoryInfo* cat, int originalIdx) {
     if (!cat->hasColors) return 1;
     if (cat->colorCounts != NULL && originalIdx >= 0 && originalIdx < cat->maxItems) {
         int count = (int)cat->colorCounts[originalIdx];
-        if (count >= 1 && count <= cat->bytesPerItem) {
+        if (count >= 0 && count <= cat->bytesPerItem) {
             return count;
         }
     }
@@ -171,6 +171,7 @@ void initCategory(CategoryInfo& cat, const char** names, int count, int offset, 
     
     for (int i = 0; i < maxItems; i++) {
         if (offset + i >= count) break;
+        if (colorCounts != NULL && colorCounts[i] == 0) continue;
         if (needsFiltering) {
             const char* name = names[offset + i];
             if (strstr(name, "Unknown_Item") != NULL) continue;
@@ -234,6 +235,24 @@ u32 getIslandNameOffset(SaveRegion reg) {
     }
 }
 
+void rebuildCategoryFilter(CategoryInfo& cat) {
+    cat.filteredIndices.clear();
+    for (int i = 0; i < cat.maxItems; i++) {
+        if (cat.nameOffset + i >= cat.nameCount) break;
+        if (cat.colorCounts != NULL && cat.colorCounts[i] == 0) continue;
+        if (cat.hasSpecialLogic && cat.names != NULL) {
+            const char* name = cat.names[cat.nameOffset + i];
+            if (strstr(name, "Unknown_Item") != NULL) continue;
+            if (strstr(name, "Unknown_")     != NULL) continue;
+            if (strstr(name, "NSPthe")       != NULL) continue;
+            if (strstr(name, "NPPthe")       != NULL) continue;
+            if (strstr(name, "NSSthe")       != NULL) continue;
+            if (strlen(name) > 60)           continue;
+        }
+        cat.filteredIndices.push_back(i);
+    }
+}
+
 void updateRegionOffsets() {
     switch (currentRegion) {
         case REGION_US:
@@ -272,6 +291,7 @@ void updateRegionOffsets() {
             categories[6].saveBase = 0x19E2;
             break;
     }
+    rebuildCategoryFilter(categories[2]);
 }
 
 // ── RAII wrappers & Auto-Backup ──────────────────────────────────────
@@ -428,7 +448,7 @@ public:
 // Verified SpotPass / StreetPass slot indices (within standard Clothes/Hats blocks)
 // excluding all unmapped Unknown_Item gaps.
 static const u16 SPOTPASS_CLOTHES_SLOTS_US[] = {
-    2, 20, 27, 39, 43, 45, 54, 69, 75, 76, 83, 91, 138, 141, 146, 153, 155,
+    2, 19, 20, 27, 39, 43, 45, 54, 69, 75, 76, 83, 91, 138, 141, 146, 153, 155,
     158, 161, 167, 174, 198, 200, 216, 217, 224, 240, 241, 244, 262, 266, 280,
     297, 301, 306, 308, 314, 316, 329, 331, 332, 346, 348, 349, 360, 427, 428,
     431, 437
@@ -446,8 +466,44 @@ static const u16 SPOTPASS_HATS_SLOTS_EU[] = {
     0, 5, 18, 48, 55, 63, 70, 71, 79, 90, 92, 95, 96, 97, 108, 112, 137, 140, 176
 };
 
-void unlockSpecialItems(SafeFile* file, CategoryInfo* cat, u8 val) {
-    if (!cat->hasSpecialLogic) return;
+void unlockCategoryAll(SafeFile* file, SafeArchive* archive, CategoryInfo* cat, u8 val) {
+    if (!file || !file->isOpen() || !cat || cat->maxItems <= 0) return;
+
+    u32 totalBytes = (u32)(cat->maxItems * cat->bytesPerItem);
+    std::vector<u8> buf(totalBytes, 0xFD);
+    u32 bytesRead = 0;
+    if (R_FAILED(file->read(cat->saveBase, buf.data(), totalBytes, &bytesRead)) || bytesRead == 0) {
+        return;
+    }
+
+    for (size_t i = 0; i < cat->filteredIndices.size(); i++) {
+        int originalIdx = cat->filteredIndices[i];
+        if (originalIdx < 0 || originalIdx >= cat->maxItems) continue;
+        if (cat->hasColors) {
+            int validColors = getValidColorCount(cat, originalIdx);
+            for (int c = 0; c < validColors; c++) {
+                u32 off = (u32)(originalIdx * cat->bytesPerItem + c);
+                if (off < totalBytes && buf[off] != 0xFF) {
+                    buf[off] = val;
+                }
+            }
+        } else {
+            u32 off = (u32)originalIdx;
+            if (off < totalBytes && buf[off] != 0xFF) {
+                buf[off] = val;
+            }
+        }
+    }
+
+    u32 bytesWritten = 0;
+    file->write(cat->saveBase, buf.data(), totalBytes, &bytesWritten);
+    if (archive && archive->get() != 0) {
+        archive->commit();
+    }
+}
+
+void unlockSpecialItems(SafeFile* file, SafeArchive* archive, CategoryInfo* cat, u8 val) {
+    if (!file || !file->isOpen() || !cat || !cat->hasSpecialLogic) return;
 
     const u16* slots = NULL;
     int slotCount = 0;
@@ -470,29 +526,90 @@ void unlockSpecialItems(SafeFile* file, CategoryInfo* cat, u8 val) {
     }
     if (slots == NULL) return;
 
-    u32 bytesWritten = 0;
+    u32 totalBytes = (u32)(cat->maxItems * cat->bytesPerItem);
+    std::vector<u8> buf(totalBytes, 0xFD);
+    u32 bytesRead = 0;
+    if (R_FAILED(file->read(cat->saveBase, buf.data(), totalBytes, &bytesRead)) || bytesRead == 0) {
+        return;
+    }
+
     for (int idx = 0; idx < slotCount; idx++) {
         int slot = (int)slots[idx];
         if (slot < 0 || slot >= cat->maxItems) continue;
         int validColors = getValidColorCount(cat, slot);
         for (int c = 0; c < validColors; c++) {
-            file->write(cat->saveBase + (slot * cat->bytesPerItem) + c, &val, 1, &bytesWritten);
+            u32 off = (u32)(slot * cat->bytesPerItem + c);
+            if (off < totalBytes && buf[off] != 0xFF) {
+                buf[off] = val;
+            }
         }
+    }
+
+    u32 bytesWritten = 0;
+    file->write(cat->saveBase, buf.data(), totalBytes, &bytesWritten);
+    if (archive && archive->get() != 0) {
+        archive->commit();
     }
 }
 
-void unlockSpecialFoods(SafeFile* file, u8 val) {
+void unlockSpecialFoods(SafeFile* file, SafeArchive* archive, u8 val) {
+    if (!file || !file->isOpen()) return;
     u32 base = categories[6].saveBase;
     if (base == 0) {
         base = (currentRegion == REGION_EU) ? 0x1A14 : 0x19E2;
     }
-    u32 bytesWritten = 0;
+
     // Slot 0 is at base (0x19E2 US / 0x1A14 EU); byte at base + 1 is skipped (0xFD sentinel);
     // Slots 1..47 are contiguous at (base + 2) .. (base + 48).
-    file->write(base, &val, 1, &bytesWritten);
-    for (u32 i = 0; i < 47; i++) {
-        file->write(base + 2 + i, &val, 1, &bytesWritten);
+    const u32 totalBytes = 49;
+    u8 buf[totalBytes];
+    u32 bytesRead = 0;
+    if (R_FAILED(file->read(base, buf, totalBytes, &bytesRead)) || bytesRead == 0) {
+        return;
     }
+    if (buf[0] != 0xFF) buf[0] = val;
+    for (u32 i = 2; i < totalBytes; i++) {
+        if (buf[i] != 0xFF) buf[i] = val;
+    }
+
+    u32 bytesWritten = 0;
+    file->write(base, buf, totalBytes, &bytesWritten);
+    if (archive && archive->get() != 0) {
+        archive->commit();
+    }
+}
+
+bool restoreBackup(SafeFile* file, SafeArchive* archive) {
+    if (!file || !file->isOpen()) return false;
+
+    FILE* in = fopen("sdmc:/3ds/tlse/backups/savedataArc.bak", "rb");
+    if (!in) in = fopen("sdmc:/3ds/tlse/savedataArc.bak", "rb");
+    if (!in) in = fopen("savedataArc.bak", "rb");
+    if (!in) {
+        snprintf(g_backupStatus, sizeof(g_backupStatus), "No .bak File Found");
+        return false;
+    }
+
+    // Prevent ensureBackupBeforeWrite() from overwriting savedataArc.bak during restore
+    g_backupCreated = true;
+
+    u8 chunk[4096];
+    u64 offset = 0;
+    while (true) {
+        size_t r = fread(chunk, 1, sizeof(chunk), in);
+        if (r == 0) break;
+        u32 bytesWritten = 0;
+        file->write(offset, chunk, (u32)r, &bytesWritten);
+        offset += r;
+        if (r < sizeof(chunk)) break;
+    }
+    fclose(in);
+
+    if (archive && archive->get() != 0) {
+        archive->commit();
+    }
+    snprintf(g_backupStatus, sizeof(g_backupStatus), "Restored from .bak!");
+    return true;
 }
 
 void readIslandMetadata(SafeFile* file, SaveRegion reg, u32* outMoney, char* outIslandNameUTF8) {
@@ -681,12 +798,12 @@ int main(int argc, char** argv) {
     initCategory(categories[0], FOOD_NAMES, FOOD_COUNT, 0, FOOD_COUNT,
                  0x17F0, 1, false, false);
     // Clothes: standard block at 0x30+(ID*8), 447 items (0x30..0xE27)
-    // Offset 984 aligns item 0 ("regular clothes") with save slot 0 (0x30)
-    initCategory(categories[1], CLOTHES_NAMES, CLOTHES_COUNT, 984, 447,
+    // Offset 990 aligns item 0 ("regular clothes") with save slot 0 (0x30)
+    initCategory(categories[1], CLOTHES_NAMES, CLOTHES_COUNT, 990, 447,
                  0x30, 8, true, true, CLOTHES_COLOR_COUNTS_US);
     // Hats: standard block at 0xFF8+(ID*8), 219 items (0xFF8..0x16CF)
-    // Offset 2600 aligns item 0 ("bear hat") with save slot 0 (0xFF8)
-    initCategory(categories[2], CLOTHES_NAMES, CLOTHES_COUNT, 2600, 219,
+    // Offset 2606 aligns item 0 ("bear hat") with save slot 0 (0xFF8)
+    initCategory(categories[2], CLOTHES_NAMES, CLOTHES_COUNT, 2606, 219,
                  0xFF8, 8, true, true, HATS_COLOR_COUNTS_US);
     // Interiors: save at 0x1778+ID, 102 items (filters out Unknown_108 at slot 98)
     initCategory(categories[3], INTERIORS_NAMES, INTERIORS_COUNT, 0, INTERIORS_COUNT,
@@ -760,9 +877,14 @@ int main(int argc, char** argv) {
                 }
                 else if (cursorIndex == 7) {
                     // Quick Action: Unlock All Special Items (SpotPass/StreetPass Clothes, Hats, and Special Foods)
-                    unlockSpecialItems(file.get(), &categories[1], 99);
-                    unlockSpecialItems(file.get(), &categories[2], 99);
-                    unlockSpecialFoods(file.get(), 99);
+                    unlockSpecialItems(file.get(), archive.get(), &categories[1], 99);
+                    unlockSpecialItems(file.get(), archive.get(), &categories[2], 99);
+                    unlockSpecialFoods(file.get(), archive.get(), 99);
+                }
+            }
+            if (kDown & KEY_Y && fileOpenSuccess) {
+                if (restoreBackup(file.get(), archive.get())) {
+                    readIslandMetadata(file.get(), currentRegion, &currentMoney, islandNameUTF8);
                 }
             }
             
@@ -809,6 +931,7 @@ int main(int argc, char** argv) {
                 if (valueChanged) {
                     u32 bytesWritten = 0;
                     file->write(getMoneyOffset(currentRegion), &currentMoney, sizeof(u32), &bytesWritten);
+                    if (archive != nullptr && archive->get() != 0) archive->commit();
                 }
             }
         }
@@ -838,20 +961,8 @@ int main(int argc, char** argv) {
                 scrollOffset = 0;
             }
             if (kDown & KEY_X && fileOpenSuccess) {
-                // Unlock All for current category
-                u8 val = 99;
-                u32 bytesWritten = 0;
-                for (int i = 0; i < (int)cat->filteredIndices.size(); i++) {
-                    int originalIdx = cat->filteredIndices[i];
-                    if (cat->hasColors) {
-                        int validColors = getValidColorCount(cat, originalIdx);
-                        for (int c = 0; c < validColors; c++) {
-                            file->write(cat->saveBase + (originalIdx * cat->bytesPerItem) + c, &val, 1, &bytesWritten);
-                        }
-                    } else {
-                        file->write(cat->saveBase + originalIdx, &val, 1, &bytesWritten);
-                    }
-                }
+                // Buffered Unlock All for current category (preserves 0xFF sentinels)
+                unlockCategoryAll(file.get(), archive.get(), cat, 99);
             }
             if (kDown & KEY_A && maxItems > 0 && fileOpenSuccess) {
                 savedItemCursor = cursorIndex;  // save position for returning
@@ -908,17 +1019,27 @@ int main(int argc, char** argv) {
 
                     if (cat->hasColors) {
                         int validColors = getValidColorCount(cat, originalIdx);
-                        if (selectedColor == -1) {
-                            // Write only valid color variants for this item
-                            for (int i = 0; i < validColors; i++) {
-                                file->write(cat->saveBase + (originalIdx * cat->bytesPerItem) + i, &val, 1, &bytesWritten);
+                        u32 slotOffset = cat->saveBase + (originalIdx * cat->bytesPerItem);
+                        u8 slotBuf[8] = {0};
+                        u32 bytesRead = 0;
+                        if (!R_FAILED(file->read(slotOffset, slotBuf, (u32)cat->bytesPerItem, &bytesRead))) {
+                            if (selectedColor == -1) {
+                                for (int i = 0; i < validColors && i < 8; i++) {
+                                    if (slotBuf[i] != 0xFF) slotBuf[i] = val;
+                                }
+                            } else if (selectedColor >= 0 && selectedColor < validColors && selectedColor < 8) {
+                                if (slotBuf[selectedColor] != 0xFF) slotBuf[selectedColor] = val;
                             }
-                        } else if (selectedColor >= 0 && selectedColor < validColors) {
-                            file->write(cat->saveBase + (originalIdx * cat->bytesPerItem) + selectedColor, &val, 1, &bytesWritten);
+                            file->write(slotOffset, slotBuf, (u32)cat->bytesPerItem, &bytesWritten);
                         }
                     } else {
-                        file->write(cat->saveBase + originalIdx, &val, 1, &bytesWritten);
+                        u8 curByte = 0;
+                        u32 bytesRead = 0;
+                        if (!R_FAILED(file->read(cat->saveBase + originalIdx, &curByte, 1, &bytesRead)) && curByte != 0xFF) {
+                            file->write(cat->saveBase + originalIdx, &val, 1, &bytesWritten);
+                        }
                     }
+                    if (archive != nullptr && archive->get() != 0) archive->commit();
                 }
                 currentState = previousCategory;
                 cursorIndex = savedItemCursor;
@@ -972,13 +1093,13 @@ int main(int argc, char** argv) {
                     snprintf(bottomString, sizeof(bottomString),
                         "Press A to unlock SpotPass/StreetPass\n"
                         "Clothes, Hats & Special Foods (x99)\n"
-                        "Backup: %s\n"
+                        "Backup: %s (Y: Restore)\n"
                         "L/R: Region | START: Save & Exit",
                         g_backupStatus);
                 } else {
                     snprintf(bottomString, sizeof(bottomString),
                         "Press A to select | L/R: Switch Region\n"
-                        "Backup: %s\n"
+                        "Backup: %s (Y: Restore)\n"
                         "Press START to save & exit",
                         g_backupStatus);
                 }
