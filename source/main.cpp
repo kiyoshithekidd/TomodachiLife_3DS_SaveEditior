@@ -7,11 +7,16 @@
 #include <memory>
 #include <vector>
 #include <sys/stat.h>
+
+#include "save_io.h"
 #include "food_names.h"
 #include "clothes_dataset.h"
 #include "interiors_dataset.h"
 #include "treasures_dataset.h"
 #include "goods_dataset.h"
+#include "mii_data.h"
+#include "relationships_data.h"
+#include "island_data.h"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -27,6 +32,23 @@ void capitalizeString(char* str) {
     }
 }
 
+bool editStringWithKeyboard(char* outBuf, int maxChars, const char* hintText) {
+    SwkbdState swkbd;
+    swkbdInit(&swkbd, SWKBD_TYPE_NORMAL, 2, maxChars);
+    swkbdSetInitialText(&swkbd, outBuf);
+    swkbdSetHintText(&swkbd, hintText);
+    swkbdSetButton(&swkbd, SWKBD_BUTTON_LEFT, "Cancel", false);
+    swkbdSetButton(&swkbd, SWKBD_BUTTON_RIGHT, "Save", true);
+    char temp[128] = {0};
+    SwkbdButton btn = swkbdInputText(&swkbd, temp, sizeof(temp));
+    if (btn == SWKBD_BUTTON_CONFIRM) {
+        strncpy(outBuf, temp, (size_t)maxChars);
+        outBuf[maxChars] = '\0';
+        return true;
+    }
+    return false;
+}
+
 // ── State Machine ────────────────────────────────────────────────────
 
 enum MenuState {
@@ -39,37 +61,50 @@ enum MenuState {
     STATE_CATEGORY_GOODS,
     STATE_CATEGORY_TREASURES,
     STATE_COLOR_SELECT,
-    STATE_QUANTITY_SELECT
+    STATE_QUANTITY_SELECT,
+    // Mii Editor Suite (#11)
+    STATE_MII_SELECT,
+    STATE_MII_SUBMENU,
+    STATE_MII_STATUS_EDIT,
+    STATE_MII_PROFILE_EDIT,
+    STATE_MII_VOICE_PERS,
+    STATE_MII_GIFTS_FOODS,
+    // Relationship Editor (#44)
+    STATE_REL_MII_A,
+    STATE_REL_MII_B,
+    STATE_REL_EDIT,
+    // Island Config (#45) & Island Info (#46)
+    STATE_ISLAND_CONFIG,
+    STATE_ISLAND_INFO,
+    // Active Interactions (#47)
+    STATE_INTERACTIONS_MII,
+    STATE_INTERACTIONS_EDIT,
+    // Quick Extras & Save Repair (#48)
+    STATE_EXTRAS_MENU,
+    // Travelers & Concert Hall (#49)
+    STATE_TRAVELERS_CONCERT_MENU,
+    STATE_TRAVELERS_LIST,
+    STATE_CONCERT_SONGS,
+    STATE_CONCERT_EDIT
 };
 
 // ── Category Info ────────────────────────────────────────────────────
-// Stores everything needed for a category: its name list, save offsets, etc.
 
-// Global variables for Region Support
-enum SaveRegion {
-    REGION_US = 0,
-    REGION_EU = 1,
-    REGION_JP = 2,
-    REGION_KR = 3
-};
 SaveRegion currentRegion = REGION_US;
 
 struct CategoryInfo {
-    const char** names;       // pointer to the name array
-    int nameCount;            // total items in the name array 
-    int nameOffset;           // offset into the array (0 for direct arrays)
-    u32 saveBase;             // base save file offset
-    int bytesPerItem;         // 1 for food/interiors/goods/treasures, 8 for clothes
-    bool hasColors;           // true if items have color variants
-    bool hasSpecialLogic;     // true if it uses the SpotPass/StreetPass scattered offsets
-    int maxItems;             // total number of items in the name list
-    const u8* colorCounts;    // per-item valid color variant counts (NULL if uniform)
-    std::vector<int> filteredIndices;  // populated at init time
+    const char** names;
+    int nameCount;
+    int nameOffset;
+    u32 saveBase;
+    int bytesPerItem;
+    bool hasColors;
+    bool hasSpecialLogic;
+    int maxItems;
+    const u8* colorCounts;
+    std::vector<int> filteredIndices;
 };
 
-// Per-item valid color variant counts (1..8) for Clothes (447 slots at 0x30..0xE27)
-// and Hats (219 slots at 0xFF8..0x16CF). Trailing bytes beyond an item's valid color
-// count must remain 0xFD (253) in savedataArc.txt to prevent blank previews and corruption.
 const u8 CLOTHES_COLOR_COUNTS_US[447] = {
     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
@@ -140,7 +175,7 @@ const u8 HATS_COLOR_COUNTS_EU[219] = {
     7, 0, 8,
 };
 
-CategoryInfo categories[10]; // FOOD, CLOTHES, HATS, INTERIORS, GOODS, TREASURES, SPECIAL_FOOD
+CategoryInfo categories[10];
 int selectedColor = -1;
 int savedItemCursor = 0;
 
@@ -148,9 +183,7 @@ int getValidColorCount(const CategoryInfo* cat, int originalIdx) {
     if (!cat->hasColors) return 1;
     if (cat->colorCounts != NULL && originalIdx >= 0 && originalIdx < cat->maxItems) {
         int count = (int)cat->colorCounts[originalIdx];
-        if (count >= 0 && count <= cat->bytesPerItem) {
-            return count;
-        }
+        if (count >= 0 && count <= cat->bytesPerItem) return count;
     }
     return cat->bytesPerItem;
 }
@@ -168,7 +201,7 @@ void initCategory(CategoryInfo& cat, const char** names, int count, int offset, 
     cat.maxItems = maxItems;
     cat.colorCounts = colorCounts;
     cat.filteredIndices.clear();
-    
+
     for (int i = 0; i < maxItems; i++) {
         if (offset + i >= count) break;
         if (colorCounts != NULL && colorCounts[i] == 0) continue;
@@ -294,159 +327,8 @@ void updateRegionOffsets() {
     rebuildCategoryFilter(categories[2]);
 }
 
-// ── RAII wrappers & Auto-Backup ──────────────────────────────────────
-
-class SafeArchive {
-private:
-    FS_Archive mArchive = 0;
-public:
-    SafeArchive(FS_ArchiveID id, FS_Path path) {
-        if (R_FAILED(FSUSER_OpenArchive(&mArchive, id, path))) {
-            mArchive = 0;
-        }
-    }
-
-    ~SafeArchive() {
-        if (mArchive) {
-            FSUSER_CloseArchive(mArchive);
-        }
-    }
-
-    // Must be called to ensure save data writes aren't lost
-    Result commit() {
-        if (!mArchive) return -1;
-        return FSUSER_ControlArchive(mArchive, ARCHIVE_ACTION_COMMIT_SAVE_DATA, NULL, 0, NULL, 0);
-    }
-    
-    FS_Archive get() const { return mArchive; }
-    
-    // Delete copy constructors to prevent double-closing of handle
-    SafeArchive(const SafeArchive&) = delete;
-    SafeArchive& operator=(const SafeArchive&) = delete;
-};
-
-static bool g_backupCreated = false;
-static char g_backupStatus[64] = "Standby (Before 1st Edit)";
-
-class SafeFile {
-private:
-    Handle mHandle = 0;
-    FILE* mStdFile = NULL;
-
-    void ensureBackupBeforeWrite() {
-        if (g_backupCreated) return;
-        g_backupCreated = true;
-
-        mkdir("sdmc:/3ds", 0777);
-        mkdir("sdmc:/3ds/tlse", 0777);
-        mkdir("sdmc:/3ds/tlse/backups", 0777);
-
-        const char* backupPath = "sdmc:/3ds/tlse/backups/savedataArc.bak";
-        FILE* out = fopen(backupPath, "wb");
-        if (!out) {
-            backupPath = "savedataArc.bak";
-            out = fopen(backupPath, "wb");
-        }
-        if (!out) {
-            snprintf(g_backupStatus, sizeof(g_backupStatus), "Backup Failed (SD Read-Only)");
-            return;
-        }
-
-        u8 chunk[4096];
-        u64 offset = 0;
-        while (true) {
-            u32 bytesRead = 0;
-            if (R_FAILED(read(offset, chunk, sizeof(chunk), &bytesRead)) || bytesRead == 0) {
-                break;
-            }
-            fwrite(chunk, 1, bytesRead, out);
-            offset += bytesRead;
-            if (bytesRead < sizeof(chunk)) break;
-        }
-        fclose(out);
-        snprintf(g_backupStatus, sizeof(g_backupStatus), "Saved (savedataArc.bak)");
-    }
-
-public:
-    SafeFile(FS_Archive archive, FS_Path path, u32 flags, u32 attributes) {
-        if (R_FAILED(FSUSER_OpenFile(&mHandle, archive, path, flags, attributes))) {
-            mHandle = 0;
-        }
-    }
-
-    explicit SafeFile(const char* sdFilePath) {
-        mStdFile = fopen(sdFilePath, "r+b");
-    }
-    
-    ~SafeFile() {
-        if (mHandle) {
-            FSFILE_Close(mHandle);
-        }
-        if (mStdFile) {
-            fflush(mStdFile);
-            fclose(mStdFile);
-        }
-    }
-
-    bool isOpen() const {
-        return (mHandle != 0) || (mStdFile != NULL);
-    }
-
-    u64 getSize() {
-        if (mHandle) {
-            u64 sz = 0;
-            if (!R_FAILED(FSFILE_GetSize(mHandle, &sz))) return sz;
-            return 0;
-        }
-        if (mStdFile) {
-            long cur = ftell(mStdFile);
-            fseek(mStdFile, 0, SEEK_END);
-            long end = ftell(mStdFile);
-            fseek(mStdFile, cur, SEEK_SET);
-            return (end > 0) ? (u64)end : 0;
-        }
-        return 0;
-    }
-    
-    Result write(u64 offset, const void* data, u32 size, u32* bytesWritten) {
-        if (!isOpen()) return -1;
-        ensureBackupBeforeWrite();
-        if (mHandle) {
-            return FSFILE_Write(mHandle, bytesWritten, offset, data, size, FS_WRITE_FLUSH);
-        }
-        if (mStdFile) {
-            if (fseek(mStdFile, (long)offset, SEEK_SET) != 0) return -1;
-            size_t w = fwrite(data, 1, size, mStdFile);
-            fflush(mStdFile);
-            if (bytesWritten) *bytesWritten = (u32)w;
-            return (w == size) ? 0 : -1;
-        }
-        return -1;
-    }
-    
-    Result read(u64 offset, void* data, u32 size, u32* bytesRead) {
-        if (mHandle) {
-            return FSFILE_Read(mHandle, bytesRead, offset, data, size);
-        }
-        if (mStdFile) {
-            if (fseek(mStdFile, (long)offset, SEEK_SET) != 0) return -1;
-            size_t r = fread(data, 1, size, mStdFile);
-            if (bytesRead) *bytesRead = (u32)r;
-            return (r > 0) ? 0 : -1;
-        }
-        return -1;
-    }
-
-    Handle get() const { return mHandle; }
-
-    // Delete copy constructors to prevent double-closing of handle
-    SafeFile(const SafeFile&) = delete;
-    SafeFile& operator=(const SafeFile&) = delete;
-};
-
 // ── Special Items Logic ──────────────────────────────────────────────
-// Verified SpotPass / StreetPass slot indices (within standard Clothes/Hats blocks)
-// excluding all unmapped Unknown_Item gaps.
+
 static const u16 SPOTPASS_CLOTHES_SLOTS_US[] = {
     2, 19, 20, 27, 39, 43, 45, 54, 69, 75, 76, 83, 91, 138, 141, 146, 153, 155,
     158, 161, 167, 174, 198, 200, 216, 217, 224, 240, 241, 244, 262, 266, 280,
@@ -483,23 +365,17 @@ void unlockCategoryAll(SafeFile* file, SafeArchive* archive, CategoryInfo* cat, 
             int validColors = getValidColorCount(cat, originalIdx);
             for (int c = 0; c < validColors; c++) {
                 u32 off = (u32)(originalIdx * cat->bytesPerItem + c);
-                if (off < totalBytes && buf[off] != 0xFF) {
-                    buf[off] = val;
-                }
+                if (off < totalBytes && buf[off] != 0xFF) buf[off] = val;
             }
         } else {
             u32 off = (u32)originalIdx;
-            if (off < totalBytes && buf[off] != 0xFF) {
-                buf[off] = val;
-            }
+            if (off < totalBytes && buf[off] != 0xFF) buf[off] = val;
         }
     }
 
     u32 bytesWritten = 0;
     file->write(cat->saveBase, buf.data(), totalBytes, &bytesWritten);
-    if (archive && archive->get() != 0) {
-        archive->commit();
-    }
+    if (archive && archive->get() != 0) archive->commit();
 }
 
 void unlockSpecialItems(SafeFile* file, SafeArchive* archive, CategoryInfo* cat, u8 val) {
@@ -539,34 +415,24 @@ void unlockSpecialItems(SafeFile* file, SafeArchive* archive, CategoryInfo* cat,
         int validColors = getValidColorCount(cat, slot);
         for (int c = 0; c < validColors; c++) {
             u32 off = (u32)(slot * cat->bytesPerItem + c);
-            if (off < totalBytes && buf[off] != 0xFF) {
-                buf[off] = val;
-            }
+            if (off < totalBytes && buf[off] != 0xFF) buf[off] = val;
         }
     }
 
     u32 bytesWritten = 0;
     file->write(cat->saveBase, buf.data(), totalBytes, &bytesWritten);
-    if (archive && archive->get() != 0) {
-        archive->commit();
-    }
+    if (archive && archive->get() != 0) archive->commit();
 }
 
 void unlockSpecialFoods(SafeFile* file, SafeArchive* archive, u8 val) {
     if (!file || !file->isOpen()) return;
     u32 base = categories[6].saveBase;
-    if (base == 0) {
-        base = (currentRegion == REGION_EU) ? 0x1A14 : 0x19E2;
-    }
+    if (base == 0) base = (currentRegion == REGION_EU) ? 0x1A14 : 0x19E2;
 
-    // Slot 0 is at base (0x19E2 US / 0x1A14 EU); byte at base + 1 is skipped (0xFD sentinel);
-    // Slots 1..47 are contiguous at (base + 2) .. (base + 48).
     const u32 totalBytes = 49;
     u8 buf[totalBytes];
     u32 bytesRead = 0;
-    if (R_FAILED(file->read(base, buf, totalBytes, &bytesRead)) || bytesRead == 0) {
-        return;
-    }
+    if (R_FAILED(file->read(base, buf, totalBytes, &bytesRead)) || bytesRead == 0) return;
     if (buf[0] != 0xFF) buf[0] = val;
     for (u32 i = 2; i < totalBytes; i++) {
         if (buf[i] != 0xFF) buf[i] = val;
@@ -574,9 +440,7 @@ void unlockSpecialFoods(SafeFile* file, SafeArchive* archive, u8 val) {
 
     u32 bytesWritten = 0;
     file->write(base, buf, totalBytes, &bytesWritten);
-    if (archive && archive->get() != 0) {
-        archive->commit();
-    }
+    if (archive && archive->get() != 0) archive->commit();
 }
 
 bool restoreBackup(SafeFile* file, SafeArchive* archive) {
@@ -590,9 +454,7 @@ bool restoreBackup(SafeFile* file, SafeArchive* archive) {
         return false;
     }
 
-    // Prevent ensureBackupBeforeWrite() from overwriting savedataArc.bak during restore
     g_backupCreated = true;
-
     u8 chunk[4096];
     u64 offset = 0;
     while (true) {
@@ -605,9 +467,7 @@ bool restoreBackup(SafeFile* file, SafeArchive* archive) {
     }
     fclose(in);
 
-    if (archive && archive->get() != 0) {
-        archive->commit();
-    }
+    if (archive && archive->get() != 0) archive->commit();
     snprintf(g_backupStatus, sizeof(g_backupStatus), "Restored from .bak!");
     return true;
 }
@@ -620,7 +480,7 @@ void readIslandMetadata(SafeFile* file, SaveRegion reg, u32* outMoney, char* out
     u16 islandNameUTF16[11] = {0};
     file->read(getIslandNameOffset(reg), islandNameUTF16, 20, &bytesRead);
     memset(outIslandNameUTF8, 0, 32);
-    utf16_to_utf8((uint8_t*)outIslandNameUTF8, islandNameUTF16, 31);
+    utf16le_to_utf8_buf(outIslandNameUTF8, 32, islandNameUTF16, 10);
 }
 
 // ── Services ─────────────────────────────────────────────────────────
@@ -628,42 +488,27 @@ void readIslandMetadata(SafeFile* file, SaveRegion reg, u32* outMoney, char* out
 u32 old_time_limit;
 
 void initServices() {
-    // 1. Core Services
-    hidInit();            // Input scanning
-    gfxInitDefault();     // Graphics
-    
+    hidInit();
+    gfxInitDefault();
     C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
     C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
     C2D_Prepare();
-    
-    // 2. CPU Time Limit Adjustment (CRITICAL for stability)
     APT_GetAppCpuTimeLimit(&old_time_limit);
-    APT_SetAppCpuTimeLimit(30); 
-    
-    // 3. Hardware & OS Services
-    romfsInit();          // Read-only filesystem (app assets)
-    cfguInit();           // System configuration
-    amInit();             // App Manager (CIA installs)
-    acInit();             // WiFi/Internet Status
-    
-    // 4. Graphics Setup
+    APT_SetAppCpuTimeLimit(30);
+    romfsInit();
+    cfguInit();
+    amInit();
+    acInit();
     gfxSetScreenFormat(GFX_BOTTOM, GSP_BGR8_OES);
     gfxSetDoubleBuffering(GFX_BOTTOM, true);
 }
 
 void exitServices() {
-    // Exit OS Services
     acExit();
     amExit();
     cfguExit();
     romfsExit();
-    
-    // Restore original CPU Time Limit
-    if (old_time_limit != UINT32_MAX) {
-        APT_SetAppCpuTimeLimit(old_time_limit);
-    }
-    
-    // Exit Core Services last
+    if (old_time_limit != UINT32_MAX) APT_SetAppCpuTimeLimit(old_time_limit);
     C2D_Fini();
     C3D_Fini();
     gfxExit();
@@ -697,6 +542,17 @@ enum SpriteIndex {
     SPR_BTN_STEPPER,
     SPR_COLOR_SWATCH_RING,
     SPR_MODAL_ERROR,
+    SPR_ICON_MII,
+    SPR_ICON_RELATIONSHIPS,
+    SPR_ICON_ISLAND,
+    SPR_ICON_INTERACTIONS,
+    SPR_ICON_EXTRAS,
+    SPR_ICON_CONCERT,
+    SPR_BADGE_HEART_PINK,
+    SPR_BADGE_FRIEND_GREEN,
+    SPR_BADGE_CONFLICT_STORM,
+    SPR_HEADER_BAR,
+    SPR_FOOTER_CARD,
     SPR_COUNT
 };
 
@@ -708,6 +564,24 @@ static inline void drawSprite(C2D_SpriteSheet sheet, size_t idx, float x, float 
     }
 }
 
+static inline void drawTextShadowed(C2D_TextBuf buf, const char* str, float x, float y,
+                                    float scaleX, float scaleY, u32 color, u32 shadowColor) {
+    if (!str || str[0] == '\0') return;
+    C2D_Text txt;
+    C2D_TextParse(&txt, buf, str);
+    C2D_TextOptimize(&txt);
+    C2D_DrawText(&txt, C2D_WithColor, x + 1.0f, y + 1.0f, 0.58f, scaleX, scaleY, shadowColor);
+    C2D_DrawText(&txt, C2D_WithColor, x, y, 0.62f, scaleX, scaleY, color);
+}
+
+// ── Structured Row Buffer (#43 UI Overhaul) ───────────────────────────
+
+struct UIRow {
+    char label[64];
+    char value[32];
+    size_t iconIdx; // SPR_COUNT means none
+};
+
 // ── Main ─────────────────────────────────────────────────────────────
 
 int main(int argc, char** argv) {
@@ -715,7 +589,7 @@ int main(int argc, char** argv) {
 
     C3D_RenderTarget* topTarget = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
     C3D_RenderTarget* bottomTarget = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
-    C2D_TextBuf staticBuf = C2D_TextBufNew(4096);
+    C2D_TextBuf topBuf = C2D_TextBufNew(4096);
     C2D_TextBuf bottomBuf = C2D_TextBufNew(4096);
     C2D_SpriteSheet spriteSheet = C2D_SpriteSheetLoad("romfs:/gfx/sprites.t3x");
 
@@ -728,7 +602,6 @@ int main(int argc, char** argv) {
         SaveRegion region;
         const char* sourceLabel;
     };
-    // Probe Game Card first across all 4 regional Title IDs, then SD Installed titles (#17, #23, #34)
     static const TitleCandidate CANDIDATES[] = {
         {MEDIATYPE_GAME_CARD, 0x0008C300, REGION_US, "Cartridge (US)"},
         {MEDIATYPE_GAME_CARD, 0x0008C400, REGION_EU, "Cartridge (EU)"},
@@ -763,7 +636,6 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Fallback: Check SD card paths for Checkpoint-exported savedataArc.txt (#18)
     if (!fileOpenSuccess) {
         static const char* SD_FALLBACK_PATHS[] = {
             "sdmc:/3ds/tlse/savedataArc.txt",
@@ -784,60 +656,66 @@ int main(int argc, char** argv) {
         }
     }
 
-    char displayString[2048] = "Tomodachi Life Save Editor\n\n";
-    char bottomString[2048] = "";
     u32 currentMoney = 0;
     char islandNameUTF8[32] = {0};
-
     if (fileOpenSuccess) {
         readIslandMetadata(file.get(), currentRegion, &currentMoney, islandNameUTF8);
     }
 
     // ── Initialize categories ────────────────────────────────────────
-    // Food: index 0 is "Nothing", save at 0x17F0+ID
-    initCategory(categories[0], FOOD_NAMES, FOOD_COUNT, 0, FOOD_COUNT,
-                 0x17F0, 1, false, false);
-    // Clothes: standard block at 0x30+(ID*8), 447 items (0x30..0xE27)
-    // Offset 990 aligns item 0 ("regular clothes") with save slot 0 (0x30)
-    initCategory(categories[1], CLOTHES_NAMES, CLOTHES_COUNT, 990, 447,
-                 0x30, 8, true, true, CLOTHES_COLOR_COUNTS_US);
-    // Hats: standard block at 0xFF8+(ID*8), 219 items (0xFF8..0x16CF)
-    // Offset 2606 aligns item 0 ("bear hat") with save slot 0 (0xFF8)
-    initCategory(categories[2], CLOTHES_NAMES, CLOTHES_COUNT, 2606, 219,
-                 0xFF8, 8, true, true, HATS_COLOR_COUNTS_US);
-    // Interiors: save at 0x1778+ID, 102 items (filters out Unknown_108 at slot 98)
-    initCategory(categories[3], INTERIORS_NAMES, INTERIORS_COUNT, 0, INTERIORS_COUNT,
-                 0x1778, 1, false, true);
-    // Goods: save at 0x18F0+ID, 18 items (US)
-    initCategory(categories[4], GOODS_NAMES, GOODS_COUNT, 0, GOODS_COUNT,
-                 0x18F0, 1, false, false);
-    // Treasures: save at 0x1902+ID, 152 items (0x1902..0x1999)
-    initCategory(categories[5], TREASURES_NAMES_US, TREASURES_COUNT, 0, TREASURES_COUNT,
-                 0x1902, 1, false, true);
-    // Special Foods: save at 0x19E2 (US) / 0x1A14 (EU), 48 items (skipping base + 1)
-    initCategory(categories[6], NULL, 0, 0, 48,
-                 0x19E2, 1, false, false);
-                 
-    // Update offsets and names based on the current region
+    initCategory(categories[0], FOOD_NAMES, FOOD_COUNT, 0, FOOD_COUNT, 0x17F0, 1, false, false);
+    initCategory(categories[1], CLOTHES_NAMES, CLOTHES_COUNT, 990, 447, 0x30, 8, true, true, CLOTHES_COLOR_COUNTS_US);
+    initCategory(categories[2], CLOTHES_NAMES, CLOTHES_COUNT, 2606, 219, 0xFF8, 8, true, true, HATS_COLOR_COUNTS_US);
+    initCategory(categories[3], INTERIORS_NAMES, INTERIORS_COUNT, 0, INTERIORS_COUNT, 0x1778, 1, false, true);
+    initCategory(categories[4], GOODS_NAMES, GOODS_COUNT, 0, GOODS_COUNT, 0x18F0, 1, false, false);
+    initCategory(categories[5], TREASURES_NAMES_US, TREASURES_COUNT, 0, TREASURES_COUNT, 0x1902, 1, false, true);
+    initCategory(categories[6], NULL, 0, 0, 48, 0x19E2, 1, false, false);
     updateRegionOffsets();
 
-    // ── State variables ──────────────────────────────────────────────
+    // ── Module State Data ────────────────────────────────────────────
+    std::vector<MiiEntry> miiList;
+    int selectedMiiListIdx = 0;
+    MiiEntry activeMii;
+    int relMiiAIdx = 0;
+    int relMiiBIdx = 1;
+    RelationshipPair activeRel;
+    IslandConfigData activeConfig;
+    IslandInfoData activeIslandInfo;
+    MiiInteractionData activeInteraction;
+    ConcertSongData activeSong;
+    int activeSongIdx = 0;
+    char statusToast[96] = "";
+
     MenuState currentState = STATE_MAIN_MENU;
     int cursorIndex = 0;
     int scrollOffset = 0;
     int quantityToGive = 1;
-    int colorCursor = 0;           // for the color selection menu
+    int colorCursor = 0;
     MenuState previousCategory = STATE_MAIN_MENU;
-    const int MAX_VISIBLE_ITEMS = 12;
-    const int MAIN_MENU_ITEMS = 8;  // Money, Food, Clothes, Hats, Interiors, Goods, Treasures, Special Unlock
+    const int MAX_VISIBLE_ROWS = 9;
+    const int MAIN_MENU_ITEMS = 14;
+
+    auto adjustListNav = [&](u32 kDown, int totalItems) {
+        if (totalItems <= 0) return;
+        if (kDown & KEY_DUP) {
+            cursorIndex = (cursorIndex > 0) ? cursorIndex - 1 : totalItems - 1;
+        }
+        if (kDown & KEY_DDOWN) {
+            cursorIndex = (cursorIndex < totalItems - 1) ? cursorIndex + 1 : 0;
+        }
+        if (cursorIndex < scrollOffset) scrollOffset = cursorIndex;
+        if (cursorIndex >= scrollOffset + MAX_VISIBLE_ROWS) {
+            scrollOffset = cursorIndex - MAX_VISIBLE_ROWS + 1;
+        }
+    };
 
     while (aptMainLoop()) {
-        hidScanInput(); 
+        hidScanInput();
         u32 kDown = hidKeysDown();
-        
+
         if (kDown & KEY_START) {
             if (fileOpenSuccess && archive != nullptr && archive->get() != 0) {
-                archive->commit(); 
+                archive->commit();
             }
             break;
         }
@@ -845,56 +723,60 @@ int main(int argc, char** argv) {
         // ═══════════════════ INPUT LOGIC ═══════════════════
 
         if (currentState == STATE_MAIN_MENU) {
-            if (kDown & KEY_DUP)   cursorIndex = (cursorIndex > 0) ? cursorIndex - 1 : MAIN_MENU_ITEMS - 1;
-            if (kDown & KEY_DDOWN) cursorIndex = (cursorIndex < MAIN_MENU_ITEMS - 1) ? cursorIndex + 1 : 0;
-            if (kDown & KEY_A && fileOpenSuccess) {
+            adjustListNav(kDown, MAIN_MENU_ITEMS);
+            if ((kDown & KEY_A) && fileOpenSuccess) {
+                statusToast[0] = '\0';
                 if (cursorIndex == 0) {
                     currentState = STATE_MONEY_EDIT;
-                }
-                else if (cursorIndex == 1) {
-                    currentState = STATE_CATEGORY_FOOD;
+                } else if (cursorIndex >= 1 && cursorIndex <= 6) {
+                    currentState = (MenuState)(STATE_CATEGORY_FOOD + (cursorIndex - 1));
                     cursorIndex = 0; scrollOffset = 0;
-                }
-                else if (cursorIndex == 2) {
-                    currentState = STATE_CATEGORY_CLOTHES;
-                    cursorIndex = 0; scrollOffset = 0;
-                }
-                else if (cursorIndex == 3) {
-                    currentState = STATE_CATEGORY_HATS;
-                    cursorIndex = 0; scrollOffset = 0;
-                }
-                else if (cursorIndex == 4) {
-                    currentState = STATE_CATEGORY_INTERIORS;
-                    cursorIndex = 0; scrollOffset = 0;
-                }
-                else if (cursorIndex == 5) {
-                    currentState = STATE_CATEGORY_GOODS;
-                    cursorIndex = 0; scrollOffset = 0;
-                }
-                else if (cursorIndex == 6) {
-                    currentState = STATE_CATEGORY_TREASURES;
-                    cursorIndex = 0; scrollOffset = 0;
-                }
-                else if (cursorIndex == 7) {
-                    // Quick Action: Unlock All Special Items (SpotPass/StreetPass Clothes, Hats, and Special Foods)
+                } else if (cursorIndex == 7) {
                     unlockSpecialItems(file.get(), archive.get(), &categories[1], 99);
                     unlockSpecialItems(file.get(), archive.get(), &categories[2], 99);
                     unlockSpecialFoods(file.get(), archive.get(), 99);
+                    snprintf(statusToast, sizeof(statusToast), "Unlocked SpotPass/StreetPass Items!");
+                } else if (cursorIndex == 8) {
+                    scanRegisteredMiis(file.get(), currentRegion, miiList);
+                    currentState = STATE_MII_SELECT;
+                    cursorIndex = 0; scrollOffset = 0;
+                } else if (cursorIndex == 9) {
+                    scanRegisteredMiis(file.get(), currentRegion, miiList);
+                    currentState = STATE_REL_MII_A;
+                    cursorIndex = 0; scrollOffset = 0;
+                } else if (cursorIndex == 10) {
+                    readIslandConfig(file.get(), currentRegion, activeConfig);
+                    currentState = STATE_ISLAND_CONFIG;
+                    cursorIndex = 0; scrollOffset = 0;
+                } else if (cursorIndex == 11) {
+                    readIslandInfo(file.get(), currentRegion, activeIslandInfo);
+                    currentState = STATE_ISLAND_INFO;
+                    cursorIndex = 0; scrollOffset = 0;
+                } else if (cursorIndex == 12) {
+                    scanRegisteredMiis(file.get(), currentRegion, miiList);
+                    currentState = STATE_INTERACTIONS_MII;
+                    cursorIndex = 0; scrollOffset = 0;
+                } else if (cursorIndex == 13) {
+                    currentState = STATE_EXTRAS_MENU;
+                    cursorIndex = 0; scrollOffset = 0;
                 }
             }
-            if (kDown & KEY_Y && fileOpenSuccess) {
+            if ((kDown & KEY_X) && fileOpenSuccess) {
+                currentState = STATE_TRAVELERS_CONCERT_MENU;
+                cursorIndex = 0; scrollOffset = 0;
+            }
+            if ((kDown & KEY_Y) && fileOpenSuccess) {
                 if (restoreBackup(file.get(), archive.get())) {
                     readIslandMetadata(file.get(), currentRegion, &currentMoney, islandNameUTF8);
+                    snprintf(statusToast, sizeof(statusToast), "Restored from savedataArc.bak!");
                 }
             }
-            
-            // Region Toggle logic
             if (kDown & KEY_L) {
-                currentRegion = (currentRegion == REGION_US) ? REGION_EU : REGION_US;
+                currentRegion = (SaveRegion)(((int)currentRegion + 3) % 4);
                 updateRegionOffsets();
                 if (fileOpenSuccess) readIslandMetadata(file.get(), currentRegion, &currentMoney, islandNameUTF8);
             } else if (kDown & KEY_R) {
-                currentRegion = (currentRegion == REGION_EU) ? REGION_US : REGION_EU;
+                currentRegion = (SaveRegion)(((int)currentRegion + 1) % 4);
                 updateRegionOffsets();
                 if (fileOpenSuccess) readIslandMetadata(file.get(), currentRegion, &currentMoney, islandNameUTF8);
             }
@@ -902,32 +784,16 @@ int main(int argc, char** argv) {
         else if (currentState == STATE_MONEY_EDIT) {
             if (kDown & KEY_B) {
                 currentState = STATE_MAIN_MENU;
-                cursorIndex = 0;
+                cursorIndex = 0; scrollOffset = 0;
             }
             if (fileOpenSuccess) {
-                const u32 MAX_MONEY = 99999999; // $999,999.99 (Tomodachi Life maximum)
+                const u32 MAX_MONEY = 99999999;
                 bool valueChanged = false;
-                if (kDown & KEY_A) {
-                    currentMoney = (currentMoney + 10000 <= MAX_MONEY) ? (currentMoney + 10000) : MAX_MONEY;
-                    valueChanged = true;
-                }
-                else if (kDown & KEY_RIGHT) {
-                    currentMoney = (currentMoney + 1000000 <= MAX_MONEY) ? (currentMoney + 1000000) : MAX_MONEY;
-                    valueChanged = true;
-                }
-                else if (kDown & KEY_LEFT) {
-                    currentMoney = (currentMoney >= 1000000) ? (currentMoney - 1000000) : 0;
-                    valueChanged = true;
-                }
-                else if (kDown & KEY_X) {
-                    currentMoney = MAX_MONEY;
-                    valueChanged = true;
-                }
-                else if (kDown & KEY_Y) {
-                    currentMoney = 0;
-                    valueChanged = true;
-                }
-
+                if (kDown & KEY_A)      { currentMoney = (currentMoney + 10000 <= MAX_MONEY) ? (currentMoney + 10000) : MAX_MONEY; valueChanged = true; }
+                else if (kDown & KEY_RIGHT) { currentMoney = (currentMoney + 1000000 <= MAX_MONEY) ? (currentMoney + 1000000) : MAX_MONEY; valueChanged = true; }
+                else if (kDown & KEY_LEFT)  { currentMoney = (currentMoney >= 1000000) ? (currentMoney - 1000000) : 0; valueChanged = true; }
+                else if (kDown & KEY_X)     { currentMoney = MAX_MONEY; valueChanged = true; }
+                else if (kDown & KEY_Y)     { currentMoney = 0; valueChanged = true; }
                 if (valueChanged) {
                     u32 bytesWritten = 0;
                     file->write(getMoneyOffset(currentRegion), &currentMoney, sizeof(u32), &bytesWritten);
@@ -938,40 +804,23 @@ int main(int argc, char** argv) {
         else if (currentState >= STATE_CATEGORY_FOOD && currentState <= STATE_CATEGORY_TREASURES) {
             CategoryInfo* cat = getCategoryForState(currentState);
             int maxItems = (int)cat->filteredIndices.size();
-
-            if (kDown & KEY_DUP) {
-                if (cursorIndex > 0) cursorIndex--;
-                if (cursorIndex < scrollOffset) scrollOffset = cursorIndex;
-            }
-            if (kDown & KEY_DDOWN) {
-                if (cursorIndex < maxItems - 1) cursorIndex++;
-                if (cursorIndex >= scrollOffset + MAX_VISIBLE_ITEMS) scrollOffset = cursorIndex - MAX_VISIBLE_ITEMS + 1;
-            }
+            adjustListNav(kDown, maxItems);
             if (kDown & KEY_B) {
-                // Return to main menu, restore cursor to whichever menu item launched us
-                int menuIdx = 0;
-                if (currentState == STATE_CATEGORY_FOOD) menuIdx = 1;
-                else if (currentState == STATE_CATEGORY_CLOTHES) menuIdx = 2;
-                else if (currentState == STATE_CATEGORY_HATS) menuIdx = 3;
-                else if (currentState == STATE_CATEGORY_INTERIORS) menuIdx = 4;
-                else if (currentState == STATE_CATEGORY_GOODS) menuIdx = 5;
-                else if (currentState == STATE_CATEGORY_TREASURES) menuIdx = 6;
+                int menuIdx = 1 + (int)(currentState - STATE_CATEGORY_FOOD);
                 currentState = STATE_MAIN_MENU;
-                cursorIndex = menuIdx;
-                scrollOffset = 0;
+                cursorIndex = menuIdx; scrollOffset = 0;
             }
-            if (kDown & KEY_X && fileOpenSuccess) {
-                // Buffered Unlock All for current category (preserves 0xFF sentinels)
+            if ((kDown & KEY_X) && fileOpenSuccess) {
                 unlockCategoryAll(file.get(), archive.get(), cat, 99);
+                snprintf(statusToast, sizeof(statusToast), "Unlocked all %s!", getTitleForState(currentState));
             }
-            if (kDown & KEY_A && maxItems > 0 && fileOpenSuccess) {
-                savedItemCursor = cursorIndex;  // save position for returning
+            if ((kDown & KEY_A) && maxItems > 0 && fileOpenSuccess) {
+                savedItemCursor = cursorIndex;
+                previousCategory = currentState;
                 if (currentState == STATE_CATEGORY_CLOTHES || currentState == STATE_CATEGORY_HATS) {
-                    previousCategory = currentState;
                     currentState = STATE_COLOR_SELECT;
                     colorCursor = 0;
                 } else {
-                    previousCategory = currentState;
                     currentState = STATE_QUANTITY_SELECT;
                     quantityToGive = 1;
                 }
@@ -981,11 +830,9 @@ int main(int argc, char** argv) {
             CategoryInfo* cat = getCategoryForState(previousCategory);
             int originalIdx = cat->filteredIndices[savedItemCursor];
             int maxColorIdx = getValidColorCount(cat, originalIdx);
-
             if (colorCursor > maxColorIdx) colorCursor = maxColorIdx;
             if (kDown & KEY_DUP)   colorCursor = (colorCursor > 0) ? colorCursor - 1 : maxColorIdx;
             if (kDown & KEY_DDOWN) colorCursor = (colorCursor < maxColorIdx) ? colorCursor + 1 : 0;
-            
             if (kDown & KEY_B) {
                 currentState = previousCategory;
                 cursorIndex = savedItemCursor;
@@ -1001,7 +848,6 @@ int main(int argc, char** argv) {
             if (kDown & KEY_DDOWN) quantityToGive = (quantityToGive > 1) ? quantityToGive - 1 : 1;
             if (kDown & KEY_RIGHT) quantityToGive = (quantityToGive + 10 <= 99) ? quantityToGive + 10 : 99;
             if (kDown & KEY_LEFT)  quantityToGive = (quantityToGive - 10 >= 1) ? quantityToGive - 10 : 1;
-
             if (kDown & KEY_B) {
                 if (previousCategory == STATE_CATEGORY_CLOTHES || previousCategory == STATE_CATEGORY_HATS) {
                     currentState = STATE_COLOR_SELECT;
@@ -1010,218 +856,742 @@ int main(int argc, char** argv) {
                     cursorIndex = savedItemCursor;
                 }
             }
-            if (kDown & KEY_A) {
-                if (fileOpenSuccess) {
-                    CategoryInfo* cat = getCategoryForState(previousCategory);
-                    int originalIdx = cat->filteredIndices[savedItemCursor];
-                    u32 bytesWritten = 0;
-                    u8 val = (u8)quantityToGive;
-
-                    if (cat->hasColors) {
-                        int validColors = getValidColorCount(cat, originalIdx);
-                        u32 slotOffset = cat->saveBase + (originalIdx * cat->bytesPerItem);
-                        u8 slotBuf[8] = {0};
-                        u32 bytesRead = 0;
-                        if (!R_FAILED(file->read(slotOffset, slotBuf, (u32)cat->bytesPerItem, &bytesRead))) {
-                            if (selectedColor == -1) {
-                                for (int i = 0; i < validColors && i < 8; i++) {
-                                    if (slotBuf[i] != 0xFF) slotBuf[i] = val;
-                                }
-                            } else if (selectedColor >= 0 && selectedColor < validColors && selectedColor < 8) {
-                                if (slotBuf[selectedColor] != 0xFF) slotBuf[selectedColor] = val;
+            if (kDown & KEY_A && fileOpenSuccess) {
+                CategoryInfo* cat = getCategoryForState(previousCategory);
+                int originalIdx = cat->filteredIndices[savedItemCursor];
+                u32 bytesWritten = 0;
+                u8 val = (u8)quantityToGive;
+                if (cat->hasColors) {
+                    int validColors = getValidColorCount(cat, originalIdx);
+                    u32 slotOffset = cat->saveBase + (originalIdx * cat->bytesPerItem);
+                    u8 slotBuf[8] = {0};
+                    u32 bytesRead = 0;
+                    if (!R_FAILED(file->read(slotOffset, slotBuf, (u32)cat->bytesPerItem, &bytesRead))) {
+                        if (selectedColor == -1) {
+                            for (int i = 0; i < validColors && i < 8; i++) {
+                                if (slotBuf[i] != 0xFF) slotBuf[i] = val;
                             }
-                            file->write(slotOffset, slotBuf, (u32)cat->bytesPerItem, &bytesWritten);
+                        } else if (selectedColor >= 0 && selectedColor < validColors && selectedColor < 8) {
+                            if (slotBuf[selectedColor] != 0xFF) slotBuf[selectedColor] = val;
                         }
-                    } else {
-                        u8 curByte = 0;
-                        u32 bytesRead = 0;
-                        if (!R_FAILED(file->read(cat->saveBase + originalIdx, &curByte, 1, &bytesRead)) && curByte != 0xFF) {
-                            file->write(cat->saveBase + originalIdx, &val, 1, &bytesWritten);
-                        }
+                        file->write(slotOffset, slotBuf, (u32)cat->bytesPerItem, &bytesWritten);
                     }
-                    if (archive != nullptr && archive->get() != 0) archive->commit();
+                } else {
+                    u8 curByte = 0;
+                    u32 bytesRead = 0;
+                    if (!R_FAILED(file->read(cat->saveBase + originalIdx, &curByte, 1, &bytesRead)) && curByte != 0xFF) {
+                        file->write(cat->saveBase + originalIdx, &val, 1, &bytesWritten);
+                    }
                 }
+                if (archive != nullptr && archive->get() != 0) archive->commit();
                 currentState = previousCategory;
                 cursorIndex = savedItemCursor;
             }
         }
-
-        // ═══════════════════ RENDERING ═══════════════════
-
-        C2D_TextBufClear(staticBuf);
-        C2D_TextBufClear(bottomBuf);
-        
-        if (currentState == STATE_MAIN_MENU) {
-            u32 dollars = currentMoney / 100;
-            u32 cents = currentMoney % 100;
-            const char* regionName = getRegionName(currentRegion);
-            if (!fileOpenSuccess) {
-                snprintf(displayString, sizeof(displayString),
-                    "Tomodachi Life Save Editor\n\n"
-                    "ERROR: Save Data Not Found!\n\n"
-                    "Checked:\n"
-                    "- Cartridge / SD Title (US/EU/JP/KR)\n"
-                    "- sdmc:/3ds/tlse/savedataArc.txt\n\n"
-                    "Insert cartridge or place Checkpoint\n"
-                    "savedataArc.txt in /3ds/tlse/");
-                snprintf(bottomString, sizeof(bottomString),
-                    "Save file not loaded.\n"
-                    "Press START to exit");
-            } else {
-                snprintf(displayString, sizeof(displayString), 
-                    "Tomodachi Life Save Editor (Region: %s)\n"
-                    "Source: %s\n"
-                    "Island: %s | Money: $%lu.%02lu\n\n"
-                    "%s Edit Money\n"
-                    "%s Edit Food\n"
-                    "%s Edit Clothes\n"
-                    "%s Edit Hats\n"
-                    "%s Edit Interiors\n"
-                    "%s Edit Goods\n"
-                    "%s Edit Treasures\n"
-                    "%s Unlock All Special Items\n",
-                    regionName, saveSourceDesc, islandNameUTF8, dollars, cents,
-                    (cursorIndex == 0) ? "->" : "  ",
-                    (cursorIndex == 1) ? "->" : "  ",
-                    (cursorIndex == 2) ? "->" : "  ",
-                    (cursorIndex == 3) ? "->" : "  ",
-                    (cursorIndex == 4) ? "->" : "  ",
-                    (cursorIndex == 5) ? "->" : "  ",
-                    (cursorIndex == 6) ? "->" : "  ",
-                    (cursorIndex == 7) ? "->" : "  ");
-                if (cursorIndex == 7) {
-                    snprintf(bottomString, sizeof(bottomString),
-                        "Press A to unlock SpotPass/StreetPass\n"
-                        "Clothes, Hats & Special Foods (x99)\n"
-                        "Backup: %s (Y: Restore)\n"
-                        "L/R: Region | START: Save & Exit",
-                        g_backupStatus);
-                } else {
-                    snprintf(bottomString, sizeof(bottomString),
-                        "Press A to select | L/R: Switch Region\n"
-                        "Backup: %s (Y: Restore)\n"
-                        "Press START to save & exit",
-                        g_backupStatus);
+        // ── Mii Editor Suite (#11) ───────────────────────────────────
+        else if (currentState == STATE_MII_SELECT) {
+            adjustListNav(kDown, (int)miiList.size());
+            if (kDown & KEY_B) { currentState = STATE_MAIN_MENU; cursorIndex = 8; scrollOffset = 0; }
+            if ((kDown & KEY_X) && !miiList.empty()) {
+                maxAllMiisLevelAndMoney(file.get(), archive.get(), currentRegion);
+                scanRegisteredMiis(file.get(), currentRegion, miiList);
+                snprintf(statusToast, sizeof(statusToast), "All Miis set to Lv.99 & Max Pocket!");
+            }
+            if ((kDown & KEY_A) && !miiList.empty()) {
+                selectedMiiListIdx = cursorIndex;
+                activeMii = miiList[selectedMiiListIdx];
+                currentState = STATE_MII_SUBMENU;
+                cursorIndex = 0; scrollOffset = 0;
+            }
+        }
+        else if (currentState == STATE_MII_SUBMENU) {
+            adjustListNav(kDown, 6);
+            if (kDown & KEY_B) {
+                scanRegisteredMiis(file.get(), currentRegion, miiList);
+                currentState = STATE_MII_SELECT;
+                cursorIndex = selectedMiiListIdx; scrollOffset = 0;
+            }
+            if (kDown & KEY_A) {
+                if (cursorIndex == 0)      { currentState = STATE_MII_STATUS_EDIT; cursorIndex = 0; scrollOffset = 0; }
+                else if (cursorIndex == 1) { currentState = STATE_MII_PROFILE_EDIT; cursorIndex = 0; scrollOffset = 0; }
+                else if (cursorIndex == 2) { currentState = STATE_MII_VOICE_PERS; cursorIndex = 0; scrollOffset = 0; }
+                else if (cursorIndex == 3) { currentState = STATE_MII_GIFTS_FOODS; cursorIndex = 0; scrollOffset = 0; }
+                else if (cursorIndex == 4) {
+                    char path[128];
+                    snprintf(path, sizeof(path), "sdmc:/3ds/tlse/miis/mii_%03d.tlmii", activeMii.slotIndex);
+                    if (exportMiiTlmii(file.get(), currentRegion, activeMii.slotIndex, path)) {
+                        snprintf(statusToast, sizeof(statusToast), "Exported mii_%03d.tlmii!", activeMii.slotIndex);
+                    }
+                } else if (cursorIndex == 5) {
+                    char path[128];
+                    snprintf(path, sizeof(path), "sdmc:/3ds/tlse/miis/mii_%03d.tlmii", activeMii.slotIndex);
+                    if (importMiiTlmii(file.get(), archive.get(), currentRegion, activeMii.slotIndex, path)) {
+                        readMiiEntry(file.get(), currentRegion, activeMii.slotIndex, activeMii);
+                        snprintf(statusToast, sizeof(statusToast), "Imported mii_%03d.tlmii!", activeMii.slotIndex);
+                    }
                 }
             }
         }
-        else if (currentState == STATE_MONEY_EDIT) {
-            u32 dollars = currentMoney / 100;
-            u32 cents = currentMoney % 100;
-            if (fileOpenSuccess) {
-                snprintf(displayString, sizeof(displayString), 
-                    "Money Editor\n\n"
-                    "Island Name: %s\n"
-                    "> Current Money: $%lu.%02lu <\n"
-                    "(Max Limit: $999,999.99)\n",
-                    islandNameUTF8, dollars, cents);
-                snprintf(bottomString, sizeof(bottomString),
-                    "A: +$100.00 | L/R D-Pad: -/+$10,000\n"
-                    "X: Max ($999,999.99) | Y: Reset ($0)\n"
-                    "Press B to go back");
-            } else {
-                snprintf(displayString, sizeof(displayString), "Error: Save file not loaded.\n");
-                snprintf(bottomString, sizeof(bottomString), "Press B to go back.");
+        else if (currentState == STATE_MII_STATUS_EDIT) {
+            adjustListNav(kDown, 9);
+            if (kDown & KEY_B) {
+                writeMiiEntry(file.get(), archive.get(), currentRegion, activeMii);
+                currentState = STATE_MII_SUBMENU; cursorIndex = 0; scrollOffset = 0;
+            }
+            int delta = (kDown & KEY_RIGHT) ? 1 : ((kDown & KEY_LEFT) ? -1 : 0);
+            int bigDelta = (kDown & KEY_A) ? 10 : 0;
+            if (delta != 0 || bigDelta != 0 || (kDown & KEY_X) || (kDown & KEY_Y)) {
+                int step = (bigDelta != 0) ? bigDelta : delta;
+                switch (cursorIndex) {
+                    case 0: // Level
+                        if (kDown & KEY_X) activeMii.level = 99;
+                        else if (kDown & KEY_Y) activeMii.level = 1;
+                        else { int v = (int)activeMii.level + step; activeMii.level = (u8)((v < 1) ? 1 : (v > 99 ? 99 : v)); }
+                        break;
+                    case 1: // EXP
+                        if (kDown & KEY_X) activeMii.experience = 99;
+                        else if (kDown & KEY_Y) activeMii.experience = 0;
+                        else { int v = (int)activeMii.experience + step; activeMii.experience = (u8)((v < 0) ? 0 : (v > 99 ? 99 : v)); }
+                        break;
+                    case 2: // Pocket Money (in $10 steps)
+                        if (kDown & KEY_X) activeMii.pocketMoney = 99999999;
+                        else if (kDown & KEY_Y) activeMii.pocketMoney = 0;
+                        else { long long v = (long long)activeMii.pocketMoney + (long long)step * 10000; activeMii.pocketMoney = (u32)((v < 0) ? 0 : (v > 99999999 ? 99999999 : v)); }
+                        break;
+                    case 3: // Pampered
+                        if (kDown & KEY_X) activeMii.pampered = 99999999;
+                        else if (kDown & KEY_Y) activeMii.pampered = 0;
+                        else { long long v = (long long)activeMii.pampered + (long long)step * 10000; activeMii.pampered = (u32)((v < 0) ? 0 : (v > 99999999 ? 99999999 : v)); }
+                        break;
+                    case 4: // Splurge
+                        if (kDown & KEY_X) activeMii.splurge = 99999999;
+                        else if (kDown & KEY_Y) activeMii.splurge = 0;
+                        else { long long v = (long long)activeMii.splurge + (long long)step * 10000; activeMii.splurge = (u32)((v < 0) ? 0 : (v > 99999999 ? 99999999 : v)); }
+                        break;
+                    case 5: // Stomach Fullness
+                        if (kDown & KEY_X) activeMii.stomach = 100;
+                        else if (kDown & KEY_Y) activeMii.stomach = 0;
+                        else { int v = (int)activeMii.stomach + step; activeMii.stomach = (u8)((v < 0) ? 0 : (v > 100 ? 100 : v)); }
+                        break;
+                    case 6: // Hair Dye
+                        if (kDown & KEY_Y) activeMii.hairColor = 1;
+                        else if (delta != 0 || bigDelta != 0) {
+                            if (activeMii.hairColor < 128) activeMii.hairColor = 128;
+                            else {
+                                int v = (int)activeMii.hairColor + delta;
+                                activeMii.hairColor = (v < 128) ? 1 : (u8)((v > 191) ? 191 : v);
+                            }
+                        }
+                        break;
+                    case 7: // Apartment Room
+                        { int v = (int)activeMii.apartmentRoom + delta; activeMii.apartmentRoom = (u8)((v < 0) ? 0 : (v > 99 ? 99 : v)); }
+                        break;
+                    case 8: // Mii Home
+                        if (kDown & KEY_Y) activeMii.miiHome = 0xFF;
+                        else if (delta != 0) {
+                            if (activeMii.miiHome == 0xFF) activeMii.miiHome = 0;
+                            else {
+                                int v = (int)activeMii.miiHome + delta;
+                                activeMii.miiHome = (v < 0) ? 0xFF : (u8)((v > 49) ? 49 : v);
+                            }
+                        }
+                        break;
+                }
             }
         }
-        else if (currentState >= STATE_CATEGORY_FOOD && currentState <= STATE_CATEGORY_TREASURES) {
+        else if (currentState == STATE_MII_PROFILE_EDIT) {
+            adjustListNav(kDown, 7);
+            if (kDown & KEY_B) {
+                writeMiiEntry(file.get(), archive.get(), currentRegion, activeMii);
+                currentState = STATE_MII_SUBMENU; cursorIndex = 1; scrollOffset = 0;
+            }
+            if (kDown & KEY_A) {
+                if (cursorIndex == 0) editStringWithKeyboard(activeMii.nickname, 10, "Mii Nickname");
+                else if (cursorIndex == 1) editStringWithKeyboard(activeMii.firstName, 16, "First Name");
+                else if (cursorIndex == 2) editStringWithKeyboard(activeMii.lastName, 16, "Last Name");
+                else if (cursorIndex == 3) activeMii.gender = (activeMii.gender == 0) ? 1 : 0;
+                else if (cursorIndex == 4) activeMii.favColor = (activeMii.favColor + 1) % 12;
+                else if (cursorIndex == 5) activeMii.grownUpFlag = (activeMii.grownUpFlag == 2) ? 1 : 2;
+                else if (cursorIndex == 6) activeMii.relationToYou = (activeMii.relationToYou + 1) % 12;
+            }
+            if ((kDown & KEY_LEFT) || (kDown & KEY_RIGHT)) {
+                int d = (kDown & KEY_RIGHT) ? 1 : -1;
+                if (cursorIndex == 3) activeMii.gender = (activeMii.gender == 0) ? 1 : 0;
+                else if (cursorIndex == 4) activeMii.favColor = (u8)((activeMii.favColor + 12 + d) % 12);
+                else if (cursorIndex == 5) activeMii.grownUpFlag = (activeMii.grownUpFlag == 2) ? 1 : 2;
+                else if (cursorIndex == 6) activeMii.relationToYou = (u8)((activeMii.relationToYou + 12 + d) % 12);
+            }
+        }
+        else if (currentState == STATE_MII_VOICE_PERS) {
+            adjustListNav(kDown, 11);
+            if (kDown & KEY_B) {
+                writeMiiEntry(file.get(), archive.get(), currentRegion, activeMii);
+                currentState = STATE_MII_SUBMENU; cursorIndex = 2; scrollOffset = 0;
+            }
+            int d = (kDown & KEY_RIGHT) ? 1 : ((kDown & KEY_LEFT) ? -1 : ((kDown & KEY_A) ? 5 : 0));
+            if (d != 0) {
+                if (cursorIndex < 6) {
+                    int v = (int)activeMii.voice[cursorIndex] + d;
+                    activeMii.voice[cursorIndex] = (u8)((v < 0) ? 0 : (v > 100 ? 100 : v));
+                } else {
+                    int idx = cursorIndex - 6;
+                    int v = (int)activeMii.personality[idx] + ((d > 0) ? 1 : -1);
+                    activeMii.personality[idx] = (u8)((v < 1) ? 1 : (v > 8 ? 8 : v));
+                }
+            }
+        }
+        else if (currentState == STATE_MII_GIFTS_FOODS) {
+            adjustListNav(kDown, 8);
+            if (kDown & KEY_B) {
+                writeMiiEntry(file.get(), archive.get(), currentRegion, activeMii);
+                currentState = STATE_MII_SUBMENU; cursorIndex = 3; scrollOffset = 0;
+            }
+            int d = (kDown & KEY_RIGHT) ? 1 : ((kDown & KEY_LEFT) ? -1 : ((kDown & KEY_A) ? 10 : 0));
+            if (d != 0) {
+                if (cursorIndex == 0) activeMii.equippedClothes = (u16)((int)activeMii.equippedClothes + d);
+                else if (cursorIndex == 1) activeMii.equippedHat = (u16)((int)activeMii.equippedHat + d);
+                else if (cursorIndex == 2) activeMii.equippedInterior = (u16)((int)activeMii.equippedInterior + d);
+                else if (cursorIndex == 3) activeMii.favFood1 = (u16)((int)activeMii.favFood1 + d);
+                else if (cursorIndex == 4) activeMii.favFood2 = (u16)((int)activeMii.favFood2 + d);
+                else if (cursorIndex == 5) activeMii.superFavFood = (u16)((int)activeMii.superFavFood + d);
+                else if (cursorIndex == 6) activeMii.worstFood = (u16)((int)activeMii.worstFood + d);
+                else if (cursorIndex == 7) activeMii.worstEverFood = (u16)((int)activeMii.worstEverFood + d);
+            }
+        }
+        // ── Relationship Editor (#44) ────────────────────────────────
+        else if (currentState == STATE_REL_MII_A) {
+            adjustListNav(kDown, (int)miiList.size());
+            if (kDown & KEY_B) { currentState = STATE_MAIN_MENU; cursorIndex = 9; scrollOffset = 0; }
+            if ((kDown & KEY_Y) && !miiList.empty()) {
+                int r = resolveAllRelationshipFights(file.get(), archive.get(), currentRegion);
+                snprintf(statusToast, sizeof(statusToast), "Resolved %d fights!", r);
+            }
+            if ((kDown & KEY_X) && !miiList.empty()) {
+                maxAllAcquaintedFeelings(file.get(), archive.get(), currentRegion);
+                snprintf(statusToast, sizeof(statusToast), "Maxed all acquainted feelings (200)!");
+            }
+            if ((kDown & KEY_A) && miiList.size() >= 2) {
+                relMiiAIdx = cursorIndex;
+                currentState = STATE_REL_MII_B;
+                cursorIndex = (relMiiAIdx == 0) ? 1 : 0; scrollOffset = 0;
+            }
+        }
+        else if (currentState == STATE_REL_MII_B) {
+            adjustListNav(kDown, (int)miiList.size());
+            if (kDown & KEY_B) { currentState = STATE_REL_MII_A; cursorIndex = relMiiAIdx; scrollOffset = 0; }
+            if ((kDown & KEY_A) && cursorIndex != relMiiAIdx) {
+                relMiiBIdx = cursorIndex;
+                readRelationshipPair(file.get(), currentRegion, miiList[relMiiAIdx].slotIndex, miiList[relMiiBIdx].slotIndex, activeRel);
+                currentState = STATE_REL_EDIT;
+                cursorIndex = 0; scrollOffset = 0;
+            }
+        }
+        else if (currentState == STATE_REL_EDIT) {
+            adjustListNav(kDown, 3);
+            if (kDown & KEY_B) {
+                writeRelationshipPair(file.get(), archive.get(), currentRegion,
+                                      miiList[relMiiAIdx].slotIndex, miiList[relMiiBIdx].slotIndex, activeRel);
+                currentState = STATE_REL_MII_B;
+                cursorIndex = relMiiBIdx; scrollOffset = 0;
+            }
+            int d = (kDown & KEY_RIGHT) ? 1 : ((kDown & KEY_LEFT) ? -1 : ((kDown & KEY_A) ? 10 : 0));
+            if (d != 0) {
+                if (cursorIndex == 0) {
+                    int s = (d > 0) ? 1 : -1;
+                    activeRel.relType = (u8)((activeRel.relType + 13 + s) % 13);
+                } else if (cursorIndex == 1) {
+                    int v = (int)activeRel.feelingAtoB + d;
+                    activeRel.feelingAtoB = (u8)((v < 0) ? 0 : (v > 200 ? 200 : v));
+                } else if (cursorIndex == 2) {
+                    int v = (int)activeRel.feelingBtoA + d;
+                    activeRel.feelingBtoA = (u8)((v < 0) ? 0 : (v > 200 ? 200 : v));
+                }
+            }
+            if (kDown & KEY_X) { activeRel.feelingAtoB = 200; activeRel.feelingBtoA = 200; }
+        }
+        // ── Island Config (#45) ──────────────────────────────────────
+        else if (currentState == STATE_ISLAND_CONFIG) {
+            adjustListNav(kDown, 35); // 24 buildings + 10 rankings + 1 apt renov
+            if (kDown & KEY_B) {
+                writeIslandConfig(file.get(), archive.get(), currentRegion, activeConfig);
+                currentState = STATE_MAIN_MENU; cursorIndex = 10; scrollOffset = 0;
+            }
+            if (kDown & KEY_X) {
+                unlockAllBuildingsAndRankings(file.get(), archive.get(), currentRegion);
+                readIslandConfig(file.get(), currentRegion, activeConfig);
+                snprintf(statusToast, sizeof(statusToast), "Unlocked all 24 Buildings & 10 Rankings!");
+            }
+            if ((kDown & KEY_A) || (kDown & KEY_LEFT) || (kDown & KEY_RIGHT)) {
+                if (cursorIndex < 24) {
+                    u8 unlockVal = (cursorIndex == 0) ? 6 : ((cursorIndex == 1) ? 3 : 2);
+                    activeConfig.buildings[cursorIndex] = (activeConfig.buildings[cursorIndex] == 0) ? unlockVal : 0;
+                } else if (cursorIndex < 34) {
+                    int r = cursorIndex - 24;
+                    activeConfig.rankings[r] = (activeConfig.rankings[r] == 0) ? 2 : 0;
+                } else {
+                    activeConfig.apartmentRenov = (activeConfig.apartmentRenov + 1) % 4;
+                }
+            }
+        }
+        // ── Island Info & Settings (#46) ─────────────────────────────
+        else if (currentState == STATE_ISLAND_INFO) {
+            adjustListNav(kDown, 11);
+            if (kDown & KEY_B) {
+                writeIslandInfo(file.get(), archive.get(), currentRegion, activeIslandInfo);
+                readIslandMetadata(file.get(), currentRegion, &currentMoney, islandNameUTF8);
+                currentState = STATE_MAIN_MENU; cursorIndex = 11; scrollOffset = 0;
+            }
+            int d = (kDown & KEY_RIGHT) ? 1 : ((kDown & KEY_LEFT) ? -1 : ((kDown & KEY_A) ? 10 : 0));
+            if (cursorIndex == 0 && (kDown & KEY_A)) {
+                editStringWithKeyboard(activeIslandInfo.islandName, 10, "Island Name");
+            } else if (cursorIndex == 1 && (kDown & KEY_A)) {
+                editStringWithKeyboard(activeIslandInfo.islandPronun, 16, "Island Pronunciation");
+            } else if (d != 0) {
+                auto stepU16 = [&](u16& val) {
+                    int nv = (int)val + d;
+                    val = (u16)((nv < 0) ? 0 : (nv > 65535 ? 65535 : nv));
+                };
+                if (cursorIndex == 2) stepU16(activeIslandInfo.problemsSolved);
+                else if (cursorIndex == 3) stepU16(activeIslandInfo.weddings);
+                else if (cursorIndex == 4) stepU16(activeIslandInfo.childrenBorn);
+                else if (cursorIndex == 5) stepU16(activeIslandInfo.streetPassEncounters);
+                else if (cursorIndex == 6) stepU16(activeIslandInfo.travelersReceived);
+                else if (cursorIndex == 7) stepU16(activeIslandInfo.travelersSent);
+                else if (cursorIndex == 8) activeIslandInfo.streetPassActive = activeIslandInfo.streetPassActive ? 0 : 1;
+                else if (cursorIndex == 9) activeIslandInfo.babiesAllowed = activeIslandInfo.babiesAllowed ? 0 : 1;
+                else if (cursorIndex == 10) activeIslandInfo.spotPassActive = activeIslandInfo.spotPassActive ? 0 : 1;
+            }
+        }
+        // ── Active Interactions (#47) ────────────────────────────────
+        else if (currentState == STATE_INTERACTIONS_MII) {
+            adjustListNav(kDown, (int)miiList.size());
+            if (kDown & KEY_B) { currentState = STATE_MAIN_MENU; cursorIndex = 12; scrollOffset = 0; }
+            if ((kDown & KEY_A) && !miiList.empty()) {
+                selectedMiiListIdx = cursorIndex;
+                readMiiInteraction(file.get(), currentRegion, miiList[selectedMiiListIdx].slotIndex, activeInteraction);
+                currentState = STATE_INTERACTIONS_EDIT;
+                cursorIndex = 0; scrollOffset = 0;
+            }
+        }
+        else if (currentState == STATE_INTERACTIONS_EDIT) {
+            adjustListNav(kDown, 4);
+            if (kDown & KEY_B) {
+                writeMiiInteraction(file.get(), archive.get(), currentRegion, miiList[selectedMiiListIdx].slotIndex, activeInteraction);
+                currentState = STATE_INTERACTIONS_MII; cursorIndex = selectedMiiListIdx; scrollOffset = 0;
+            }
+            if (kDown & KEY_X) {
+                activeInteraction.emotion = 0;
+                activeInteraction.typeId = 0;
+                activeInteraction.target1 = 0xFFFF;
+                activeInteraction.target2 = 0xFFFF;
+            }
+            int d = (kDown & KEY_RIGHT) ? 1 : ((kDown & KEY_LEFT) ? -1 : 0);
+            if (d != 0 || (kDown & KEY_A)) {
+                if (cursorIndex == 0) activeInteraction.emotion = (u8)((activeInteraction.emotion + 5 + (d ? d : 1)) % 5);
+                else if (cursorIndex == 1) activeInteraction.typeId = (u16)((int)activeInteraction.typeId + (d ? d : 1));
+                else if (cursorIndex == 2) activeInteraction.target1 = (u16)((int)activeInteraction.target1 + (d ? d : 1));
+                else if (cursorIndex == 3) activeInteraction.target2 = (u16)((int)activeInteraction.target2 + (d ? d : 1));
+            }
+        }
+        // ── Quick Extras & Save Repair (#48) ─────────────────────────
+        else if (currentState == STATE_EXTRAS_MENU) {
+            adjustListNav(kDown, 7);
+            if (kDown & KEY_B) { currentState = STATE_MAIN_MENU; cursorIndex = 13; scrollOffset = 0; }
+            if ((kDown & KEY_A) && fileOpenSuccess) {
+                if (cursorIndex == 0) {
+                    int n = setAllMiisStomach(file.get(), archive.get(), currentRegion, 100);
+                    snprintf(statusToast, sizeof(statusToast), "Filled %d Miis' stomachs (100%%)!", n);
+                } else if (cursorIndex == 1) {
+                    int n = setAllMiisStomach(file.get(), archive.get(), currentRegion, 0);
+                    snprintf(statusToast, sizeof(statusToast), "Emptied %d Miis' stomachs (0%%)!", n);
+                } else if (cursorIndex == 2) {
+                    int n = maxAllMiisLevelAndMoney(file.get(), archive.get(), currentRegion);
+                    snprintf(statusToast, sizeof(statusToast), "Maxed %d Miis (Lv.99 + Pocket)!", n);
+                } else if (cursorIndex == 3) {
+                    int n = resolveAllRelationshipFights(file.get(), archive.get(), currentRegion);
+                    snprintf(statusToast, sizeof(statusToast), "Resolved %d fights!", n);
+                } else if (cursorIndex == 4) {
+                    resetAllApartmentRooms(file.get(), archive.get(), currentRegion);
+                    snprintf(statusToast, sizeof(statusToast), "Reset all Apartment room assignments!");
+                } else if (cursorIndex == 5) {
+                    resetMiiNewsFlashes(file.get(), archive.get(), currentRegion);
+                    snprintf(statusToast, sizeof(statusToast), "Cleared Mii News flashes!");
+                } else if (cursorIndex == 6) {
+                    int n = repairSaveInteractions(file.get(), archive.get(), currentRegion);
+                    snprintf(statusToast, sizeof(statusToast), "Repaired %d malformed interactions!", n);
+                }
+            }
+        }
+        // ── Travelers & Concert Hall (#49) ───────────────────────────
+        else if (currentState == STATE_TRAVELERS_CONCERT_MENU) {
+            adjustListNav(kDown, 2);
+            if (kDown & KEY_B) { currentState = STATE_MAIN_MENU; cursorIndex = 0; scrollOffset = 0; }
+            if (kDown & KEY_A) {
+                currentState = (cursorIndex == 0) ? STATE_TRAVELERS_LIST : STATE_CONCERT_SONGS;
+                cursorIndex = 0; scrollOffset = 0;
+            }
+        }
+        else if (currentState == STATE_TRAVELERS_LIST) {
+            adjustListNav(kDown, MAX_TRAVELERS);
+            if (kDown & KEY_B) { currentState = STATE_TRAVELERS_CONCERT_MENU; cursorIndex = 0; scrollOffset = 0; }
+            if ((kDown & KEY_X) && fileOpenSuccess) {
+                clearTravelerSlot(file.get(), archive.get(), currentRegion, cursorIndex);
+                snprintf(statusToast, sizeof(statusToast), "Cleared Traveler slot %d!", cursorIndex + 1);
+            }
+        }
+        else if (currentState == STATE_CONCERT_SONGS) {
+            adjustListNav(kDown, 8);
+            if (kDown & KEY_B) { currentState = STATE_TRAVELERS_CONCERT_MENU; cursorIndex = 1; scrollOffset = 0; }
+            if ((kDown & KEY_A) && fileOpenSuccess) {
+                activeSongIdx = cursorIndex;
+                readConcertSong(file.get(), activeSongIdx, activeSong);
+                currentState = STATE_CONCERT_EDIT;
+                cursorIndex = 0; scrollOffset = 0;
+            }
+        }
+        else if (currentState == STATE_CONCERT_EDIT) {
+            adjustListNav(kDown, 15); // Title + Genre + 13 Lyric lines
+            if (kDown & KEY_B) {
+                writeConcertSong(file.get(), archive.get(), activeSongIdx, activeSong);
+                currentState = STATE_CONCERT_SONGS; cursorIndex = activeSongIdx; scrollOffset = 0;
+            }
+            if (kDown & KEY_A) {
+                if (cursorIndex == 0) editStringWithKeyboard(activeSong.title, 32, "Song Title");
+                else if (cursorIndex == 1) activeSong.genre = (activeSong.genre + 1) % 8;
+                else editStringWithKeyboard(activeSong.lines[cursorIndex - 2], 48, "Song Lyric Line");
+            }
+        }
+
+        // ═══════════════════ BUILD STRUCTURED UI ROWS ════════════════
+
+        std::vector<UIRow> rows;
+        char headerTitle[80] = "";
+        char bottomHint[256] = "";
+        size_t headerIcon = SPR_COUNT;
+
+        if (!fileOpenSuccess) {
+            snprintf(headerTitle, sizeof(headerTitle), "Save Data Not Found");
+            snprintf(bottomHint, sizeof(bottomHint),
+                     "Checked Cartridge / SD (US/EU/JP/KR)\n"
+                     "and sdmc:/3ds/tlse/savedataArc.txt\n"
+                     "[START] Exit");
+        } else if (currentState == STATE_MAIN_MENU) {
+            u32 dollars = currentMoney / 100;
+            u32 cents = currentMoney % 100;
+            snprintf(headerTitle, sizeof(headerTitle), "%s  |  $%lu.%02lu  (%s)",
+                     islandNameUTF8, dollars, cents, getRegionName(currentRegion));
+
+            struct MainItemDef { const char* label; const char* val; size_t icon; };
+            static const MainItemDef MAIN_DEFS[14] = {
+                {"Edit Money",                  "Edit",   SPR_ICON_MONEY},
+                {"Edit Food",                   "Items",  SPR_ICON_FOOD},
+                {"Edit Clothes",                "Items",  SPR_ICON_CLOTHES},
+                {"Edit Hats",                   "Items",  SPR_ICON_HATS},
+                {"Edit Interiors",              "Items",  SPR_ICON_INTERIORS},
+                {"Edit Goods",                  "Items",  SPR_ICON_GOODS},
+                {"Edit Treasures",              "Items",  SPR_ICON_TREASURES},
+                {"Unlock All Special Items",    "x99",    SPR_ICON_SPECIAL},
+                {"Mii Editor (Status/Profile)", "100",    SPR_ICON_MII},
+                {"Relationship Editor",         "Matrix", SPR_ICON_RELATIONSHIPS},
+                {"Island Buildings & Rankings", "24+10",  SPR_ICON_ISLAND},
+                {"Island Info & Settings",      "Stats",  SPR_ICON_ISLAND},
+                {"Active Mii Interactions",     "Bubbles",SPR_ICON_INTERACTIONS},
+                {"Quick Extras & Save Repair",  "Tools",  SPR_ICON_EXTRAS}
+            };
+            for (int i = 0; i < MAIN_MENU_ITEMS; i++) {
+                UIRow r;
+                snprintf(r.label, sizeof(r.label), "%s", MAIN_DEFS[i].label);
+                snprintf(r.value, sizeof(r.value), "%s", MAIN_DEFS[i].val);
+                r.iconIdx = MAIN_DEFS[i].icon;
+                rows.push_back(r);
+            }
+            snprintf(bottomHint, sizeof(bottomHint),
+                     "[A] Open  [X] Travelers/Concert  [Y] Restore .bak\n"
+                     "[L/R] Region  |  Backup: %s\n"
+                     "%s",
+                     g_backupStatus,
+                     statusToast[0] ? statusToast : "[START] Save & Exit");
+        } else if (currentState == STATE_MONEY_EDIT) {
+            u32 dollars = currentMoney / 100;
+            u32 cents = currentMoney % 100;
+            headerIcon = SPR_ICON_MONEY;
+            snprintf(headerTitle, sizeof(headerTitle), "Money Editor — %s", islandNameUTF8);
+            UIRow r1; snprintf(r1.label, sizeof(r1.label), "Current Balance"); snprintf(r1.value, sizeof(r1.value), "$%lu.%02lu", dollars, cents); r1.iconIdx = SPR_ICON_MONEY;
+            UIRow r2; snprintf(r2.label, sizeof(r2.label), "Maximum Limit"); snprintf(r2.value, sizeof(r2.value), "$999,999.99"); r2.iconIdx = SPR_COUNT;
+            rows.push_back(r1); rows.push_back(r2);
+            snprintf(bottomHint, sizeof(bottomHint),
+                     "[A] +$100   [Left/Right] -/+$10,000\n"
+                     "[X] Max ($999,999.99)   [Y] Reset ($0)\n"
+                     "[B] Back");
+        } else if (currentState >= STATE_CATEGORY_FOOD && currentState <= STATE_CATEGORY_TREASURES) {
             CategoryInfo* cat = getCategoryForState(currentState);
-            const char* title = getTitleForState(currentState);
-            int maxItems = (int)cat->filteredIndices.size();
-            
-            char listStr[2048] = {0};
-            snprintf(listStr, sizeof(listStr), "%s List (%d items)\n", title, maxItems);
-            
-            for (int i = scrollOffset; i < scrollOffset + MAX_VISIBLE_ITEMS && i < maxItems; i++) {
-                int originalIdx = cat->filteredIndices[i];
-                char itemName[128];
+            headerIcon = SPR_ICON_FOOD + (size_t)(currentState - STATE_CATEGORY_FOOD);
+            snprintf(headerTitle, sizeof(headerTitle), "%s (%zu items)", getTitleForState(currentState), cat->filteredIndices.size());
+            for (size_t i = 0; i < cat->filteredIndices.size(); i++) {
+                int orig = cat->filteredIndices[i];
+                UIRow r;
                 if (cat->names != NULL) {
-                    strncpy(itemName, cat->names[originalIdx + cat->nameOffset], sizeof(itemName) - 1);
-                    itemName[sizeof(itemName) - 1] = '\0';
-                    capitalizeString(itemName);
+                    strncpy(r.label, cat->names[orig + cat->nameOffset], sizeof(r.label) - 1);
+                    r.label[sizeof(r.label) - 1] = '\0';
+                    capitalizeString(r.label);
                 } else {
-                    snprintf(itemName, sizeof(itemName), "Item #%d", originalIdx + 1);
+                    snprintf(r.label, sizeof(r.label), "Item #%d", orig + 1);
                 }
-                
-                char temp[256];
-                snprintf(temp, sizeof(temp), "%s [%03d] %.40s\n", (i == cursorIndex) ? "->" : "  ", i + 1, itemName);
-                strncat(listStr, temp, sizeof(listStr) - strlen(listStr) - 1);
+                u8 qty = 0; u32 br = 0;
+                u64 off = cat->hasColors ? (cat->saveBase + (u64)orig * cat->bytesPerItem) : (cat->saveBase + (u64)orig);
+                file->read(off, &qty, 1, &br);
+                snprintf(r.value, sizeof(r.value), (qty == 0xFF) ? "N/A" : "x%u", (unsigned)qty);
+                r.iconIdx = SPR_COUNT;
+                rows.push_back(r);
             }
-            snprintf(displayString, sizeof(displayString), "%s", listStr);
-            snprintf(bottomString, sizeof(bottomString),
-                "A: Set Quantity | X: Unlock All (x99)\n"
-                "Up/Down: Scroll | B: Back");
-        }
-        else if (currentState == STATE_COLOR_SELECT) {
+            snprintf(bottomHint, sizeof(bottomHint),
+                     "[A] Set Quantity   [X] Unlock All (x99)\n"
+                     "[Up/Down] Scroll   [B] Back\n%s", statusToast);
+        } else if (currentState == STATE_COLOR_SELECT) {
             CategoryInfo* cat = getCategoryForState(previousCategory);
             int originalIdx = cat->filteredIndices[savedItemCursor];
             int validColors = getValidColorCount(cat, originalIdx);
-            char itemName[128];
-            if (cat->names != NULL) {
-                strncpy(itemName, cat->names[originalIdx + cat->nameOffset], sizeof(itemName) - 1);
-                itemName[sizeof(itemName) - 1] = '\0';
-                capitalizeString(itemName);
-            } else {
-                snprintf(itemName, sizeof(itemName), "Item #%d", originalIdx + 1);
-            }
-
+            snprintf(headerTitle, sizeof(headerTitle), "Select Color (%d available)", validColors);
             const char* colors[] = {"All Colors", "Color 1", "Color 2", "Color 3", "Color 4", "Color 5", "Color 6", "Color 7", "Color 8"};
-            char colorStr[512];
-            snprintf(colorStr, sizeof(colorStr), "Item: %.38s\nSelect Color (%d available):\n\n", itemName, validColors);
             for (int i = 0; i <= validColors; i++) {
-                char temp[64];
-                snprintf(temp, sizeof(temp), "%s %s\n", (i == colorCursor) ? "->" : "  ", colors[i]);
-                strcat(colorStr, temp);
+                UIRow r;
+                snprintf(r.label, sizeof(r.label), "%s", colors[i]);
+                r.value[0] = '\0'; r.iconIdx = SPR_COUNT;
+                rows.push_back(r);
             }
-            snprintf(displayString, sizeof(displayString), "%s", colorStr);
-            snprintf(bottomString, sizeof(bottomString), "Press A to select\nPress B to go back");
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Select Color   [B] Back");
+        } else if (currentState == STATE_QUANTITY_SELECT) {
+            snprintf(headerTitle, sizeof(headerTitle), "Set Quantity");
+            UIRow r1; snprintf(r1.label, sizeof(r1.label), "New Quantity"); snprintf(r1.value, sizeof(r1.value), "x%d", quantityToGive); r1.iconIdx = SPR_COUNT;
+            rows.push_back(r1);
+            snprintf(bottomHint, sizeof(bottomHint), "[Up/Down] +/-1  [Left/Right] +/-10\n[A] Apply  [B] Cancel");
+        } else if (currentState == STATE_MII_SELECT) {
+            headerIcon = SPR_ICON_MII;
+            snprintf(headerTitle, sizeof(headerTitle), "Select Mii (%zu Islanders)", miiList.size());
+            for (size_t i = 0; i < miiList.size(); i++) {
+                UIRow r;
+                snprintf(r.label, sizeof(r.label), "%s (%s)", miiList[i].nickname, miiList[i].gender == 0 ? "M" : "F");
+                snprintf(r.value, sizeof(r.value), "Lv.%u", miiList[i].level);
+                r.iconIdx = SPR_COUNT;
+                rows.push_back(r);
+            }
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Edit Mii   [X] Max All Lv.99\n[B] Back\n%s", statusToast);
+        } else if (currentState == STATE_MII_SUBMENU) {
+            headerIcon = SPR_ICON_MII;
+            snprintf(headerTitle, sizeof(headerTitle), "Mii: %s (Slot %d)", activeMii.nickname, activeMii.slotIndex + 1);
+            const char* subs[6] = {"Status & Stats", "Profile & Names", "Voice & Personality", "Equipped, Gifts & Foods", "Export .tlmii to SD", "Import .tlmii from SD"};
+            for (int i = 0; i < 6; i++) {
+                UIRow r; snprintf(r.label, sizeof(r.label), "%s", subs[i]); r.value[0] = '\0'; r.iconIdx = SPR_COUNT;
+                rows.push_back(r);
+            }
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Open   [B] Back to Mii List\n%s", statusToast);
+        } else if (currentState == STATE_MII_STATUS_EDIT) {
+            snprintf(headerTitle, sizeof(headerTitle), "%s — Status", activeMii.nickname);
+            const char* labels[9] = {"Level", "Experience", "Pocket Money", "Pampered Score", "Splurge Score", "Stomach Fullness", "Hair Dye", "Apartment Room", "Mii Home ID"};
+            for (int i = 0; i < 9; i++) {
+                UIRow r; snprintf(r.label, sizeof(r.label), "%s", labels[i]); r.iconIdx = SPR_COUNT;
+                if (i == 0) snprintf(r.value, sizeof(r.value), "%u", activeMii.level);
+                else if (i == 1) snprintf(r.value, sizeof(r.value), "%u%%", activeMii.experience);
+                else if (i == 2) snprintf(r.value, sizeof(r.value), "$%lu.%02lu", activeMii.pocketMoney / 100, activeMii.pocketMoney % 100);
+                else if (i == 3) snprintf(r.value, sizeof(r.value), "$%lu.%02lu", activeMii.pampered / 100, activeMii.pampered % 100);
+                else if (i == 4) snprintf(r.value, sizeof(r.value), "$%lu.%02lu", activeMii.splurge / 100, activeMii.splurge % 100);
+                else if (i == 5) snprintf(r.value, sizeof(r.value), "%u%%", activeMii.stomach);
+                else if (i == 6) snprintf(r.value, sizeof(r.value), activeMii.hairColor < 128 ? "Natural" : "Dye #%u", activeMii.hairColor);
+                else if (i == 7) snprintf(r.value, sizeof(r.value), "#%u", activeMii.apartmentRoom + 1);
+                else snprintf(r.value, sizeof(r.value), activeMii.miiHome == 0xFF ? "None" : "Home #%u", activeMii.miiHome + 1);
+                rows.push_back(r);
+            }
+            snprintf(bottomHint, sizeof(bottomHint), "[Left/Right] +/-1  [A] +10  [X] Max  [Y] Reset\n[B] Save & Back");
+        } else if (currentState == STATE_MII_PROFILE_EDIT) {
+            snprintf(headerTitle, sizeof(headerTitle), "%s — Profile", activeMii.nickname);
+            const char* labels[7] = {"Nickname", "First Name", "Last Name", "Gender", "Favorite Color", "Adult / Kid", "Relation to You"};
+            for (int i = 0; i < 7; i++) {
+                UIRow r; snprintf(r.label, sizeof(r.label), "%s", labels[i]); r.iconIdx = SPR_COUNT;
+                if (i == 0) snprintf(r.value, sizeof(r.value), "%.24s", activeMii.nickname);
+                else if (i == 1) snprintf(r.value, sizeof(r.value), "%.24s", activeMii.firstName);
+                else if (i == 2) snprintf(r.value, sizeof(r.value), "%.24s", activeMii.lastName);
+                else if (i == 3) snprintf(r.value, sizeof(r.value), "%s", activeMii.gender == 0 ? "Male" : "Female");
+                else if (i == 4) snprintf(r.value, sizeof(r.value), "%s", getFavColorName(activeMii.favColor));
+                else if (i == 5) snprintf(r.value, sizeof(r.value), "%s", activeMii.grownUpFlag == 2 ? "Kid" : "Adult");
+                else snprintf(r.value, sizeof(r.value), "%s", getRelationName(activeMii.relationToYou));
+                rows.push_back(r);
+            }
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Edit Text / Toggle   [Left/Right] Cycle\n[B] Save & Back");
+        } else if (currentState == STATE_MII_VOICE_PERS) {
+            snprintf(headerTitle, sizeof(headerTitle), "%s — Voice & Personality", activeMii.nickname);
+            const char* labels[11] = {"Voice Pitch", "Voice Speed", "Voice Quality", "Voice Tone", "Voice Accent", "Voice Intonation",
+                                      "Pers: Movement", "Pers: Speech", "Pers: Expressiveness", "Pers: Attitude", "Pers: Overall"};
+            for (int i = 0; i < 11; i++) {
+                UIRow r; snprintf(r.label, sizeof(r.label), "%s", labels[i]); r.iconIdx = SPR_COUNT;
+                snprintf(r.value, sizeof(r.value), "%u", (i < 6) ? activeMii.voice[i] : activeMii.personality[i - 6]);
+                rows.push_back(r);
+            }
+            snprintf(bottomHint, sizeof(bottomHint), "[Left/Right] Adjust   [A] +5   [B] Save & Back");
+        } else if (currentState == STATE_MII_GIFTS_FOODS) {
+            snprintf(headerTitle, sizeof(headerTitle), "%s — Equipped & Foods", activeMii.nickname);
+            const char* labels[8] = {"Equipped Clothes ID", "Equipped Hat ID", "Equipped Interior ID", "All-Time Fav #1", "All-Time Fav #2", "Super All-Time Fav", "Worst Food", "Worst Ever Food"};
+            u16 vals[8] = {activeMii.equippedClothes, activeMii.equippedHat, activeMii.equippedInterior, activeMii.favFood1, activeMii.favFood2, activeMii.superFavFood, activeMii.worstFood, activeMii.worstEverFood};
+            for (int i = 0; i < 8; i++) {
+                UIRow r; snprintf(r.label, sizeof(r.label), "%s", labels[i]);
+                snprintf(r.value, sizeof(r.value), "#%u", vals[i]); r.iconIdx = SPR_COUNT;
+                rows.push_back(r);
+            }
+            snprintf(bottomHint, sizeof(bottomHint), "[Left/Right] +/-1   [A] +10   [B] Save & Back");
+        } else if (currentState == STATE_REL_MII_A || currentState == STATE_REL_MII_B) {
+            headerIcon = SPR_ICON_RELATIONSHIPS;
+            snprintf(headerTitle, sizeof(headerTitle),
+                     (currentState == STATE_REL_MII_A) ? "Relationships: Select Mii A" : "Relationships: %s <-> Mii B",
+                     (currentState == STATE_REL_MII_A) ? "" : miiList[relMiiAIdx].nickname);
+            for (size_t i = 0; i < miiList.size(); i++) {
+                UIRow r;
+                snprintf(r.label, sizeof(r.label), "%s", miiList[i].nickname);
+                if (currentState == STATE_REL_MII_B) {
+                    if ((int)i == relMiiAIdx) snprintf(r.value, sizeof(r.value), "(Self)");
+                    else {
+                        RelationshipPair rp;
+                        readRelationshipPair(file.get(), currentRegion, miiList[relMiiAIdx].slotIndex, miiList[i].slotIndex, rp);
+                        snprintf(r.value, sizeof(r.value), "%s", getRelationshipTypeName(rp.relType));
+                    }
+                } else {
+                    snprintf(r.value, sizeof(r.value), "Lv.%u", miiList[i].level);
+                }
+                r.iconIdx = SPR_COUNT;
+                rows.push_back(r);
+            }
+            snprintf(bottomHint, sizeof(bottomHint),
+                     (currentState == STATE_REL_MII_A)
+                         ? "[A] Select Mii A   [Y] Resolve Fights\n[X] Max All Feelings   [B] Back\n%s"
+                         : "[A] Edit Pair   [B] Back to Mii A",
+                     statusToast);
+        } else if (currentState == STATE_REL_EDIT) {
+            headerIcon = SPR_ICON_RELATIONSHIPS;
+            snprintf(headerTitle, sizeof(headerTitle), "%s <-> %s", miiList[relMiiAIdx].nickname, miiList[relMiiBIdx].nickname);
+            UIRow r1; snprintf(r1.label, sizeof(r1.label), "Relationship Type (Symmetric)"); snprintf(r1.value, sizeof(r1.value), "%s", getRelationshipTypeName(activeRel.relType)); r1.iconIdx = SPR_COUNT;
+            UIRow r2; snprintf(r2.label, sizeof(r2.label), "%s -> %s Feeling", miiList[relMiiAIdx].nickname, miiList[relMiiBIdx].nickname); snprintf(r2.value, sizeof(r2.value), "%u / 200", activeRel.feelingAtoB); r2.iconIdx = SPR_COUNT;
+            UIRow r3; snprintf(r3.label, sizeof(r3.label), "%s -> %s Feeling", miiList[relMiiBIdx].nickname, miiList[relMiiAIdx].nickname); snprintf(r3.value, sizeof(r3.value), "%u / 200", activeRel.feelingBtoA); r3.iconIdx = SPR_COUNT;
+            rows.push_back(r1); rows.push_back(r2); rows.push_back(r3);
+            snprintf(bottomHint, sizeof(bottomHint), "[Left/Right] Adjust   [A] +10   [X] Max Both 200\n[B] Save & Back");
+        } else if (currentState == STATE_ISLAND_CONFIG) {
+            headerIcon = SPR_ICON_ISLAND;
+            snprintf(headerTitle, sizeof(headerTitle), "Island Buildings (24) & Rankings (10)");
+            for (int i = 0; i < 24; i++) {
+                UIRow r; snprintf(r.label, sizeof(r.label), "Bldg: %s", getBuildingName(i));
+                snprintf(r.value, sizeof(r.value), activeConfig.buildings[i] > 0 ? "Unlocked" : "Locked");
+                r.iconIdx = SPR_COUNT; rows.push_back(r);
+            }
+            for (int i = 0; i < 10; i++) {
+                UIRow r; snprintf(r.label, sizeof(r.label), "Rank: %s", getRankingBoardName(i));
+                snprintf(r.value, sizeof(r.value), activeConfig.rankings[i] > 0 ? "Unlocked" : "Locked");
+                r.iconIdx = SPR_COUNT; rows.push_back(r);
+            }
+            UIRow ra; snprintf(ra.label, sizeof(ra.label), "Apartment Expansion Tier");
+            snprintf(ra.value, sizeof(ra.value), "Tier %u", activeConfig.apartmentRenov);
+            ra.iconIdx = SPR_COUNT; rows.push_back(ra);
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Toggle   [X] Unlock All Buildings/Rankings\n[B] Save & Back\n%s", statusToast);
+        } else if (currentState == STATE_ISLAND_INFO) {
+            headerIcon = SPR_ICON_ISLAND;
+            snprintf(headerTitle, sizeof(headerTitle), "Island Info & Settings");
+            const char* labels[11] = {"Island Name", "Island Pronunciation", "Problems Solved", "Weddings", "Children Born", "StreetPass Encounters", "Travelers Received", "Travelers Sent", "StreetPass Active", "Babies Allowed", "SpotPass Active"};
+            for (int i = 0; i < 11; i++) {
+                UIRow r; snprintf(r.label, sizeof(r.label), "%s", labels[i]); r.iconIdx = SPR_COUNT;
+                if (i == 0) snprintf(r.value, sizeof(r.value), "%s", activeIslandInfo.islandName);
+                else if (i == 1) snprintf(r.value, sizeof(r.value), "%s", activeIslandInfo.islandPronun);
+                else if (i == 2) snprintf(r.value, sizeof(r.value), "%u", activeIslandInfo.problemsSolved);
+                else if (i == 3) snprintf(r.value, sizeof(r.value), "%u", activeIslandInfo.weddings);
+                else if (i == 4) snprintf(r.value, sizeof(r.value), "%u", activeIslandInfo.childrenBorn);
+                else if (i == 5) snprintf(r.value, sizeof(r.value), "%u", activeIslandInfo.streetPassEncounters);
+                else if (i == 6) snprintf(r.value, sizeof(r.value), "%u", activeIslandInfo.travelersReceived);
+                else if (i == 7) snprintf(r.value, sizeof(r.value), "%u", activeIslandInfo.travelersSent);
+                else if (i == 8) snprintf(r.value, sizeof(r.value), "%s", activeIslandInfo.streetPassActive ? "ON" : "OFF");
+                else if (i == 9) snprintf(r.value, sizeof(r.value), "%s", activeIslandInfo.babiesAllowed ? "ON" : "OFF");
+                else snprintf(r.value, sizeof(r.value), "%s", activeIslandInfo.spotPassActive ? "ON" : "OFF");
+                rows.push_back(r);
+            }
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Edit Name / +10   [Left/Right] Adjust\n[B] Save & Back");
+        } else if (currentState == STATE_INTERACTIONS_MII) {
+            headerIcon = SPR_ICON_INTERACTIONS;
+            snprintf(headerTitle, sizeof(headerTitle), "Active Mii Interactions");
+            for (size_t i = 0; i < miiList.size(); i++) {
+                MiiInteractionData id;
+                readMiiInteraction(file.get(), currentRegion, miiList[i].slotIndex, id);
+                UIRow r; snprintf(r.label, sizeof(r.label), "%s", miiList[i].nickname);
+                snprintf(r.value, sizeof(r.value), "%s", getEmotionName(id.emotion));
+                r.iconIdx = SPR_COUNT; rows.push_back(r);
+            }
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Edit Window Bubble   [B] Back");
+        } else if (currentState == STATE_INTERACTIONS_EDIT) {
+            headerIcon = SPR_ICON_INTERACTIONS;
+            snprintf(headerTitle, sizeof(headerTitle), "%s — Window Bubble", miiList[selectedMiiListIdx].nickname);
+            UIRow r0; snprintf(r0.label, sizeof(r0.label), "Bubble Emotion"); snprintf(r0.value, sizeof(r0.value), "%s", getEmotionName(activeInteraction.emotion)); r0.iconIdx = SPR_COUNT;
+            UIRow r1; snprintf(r1.label, sizeof(r1.label), "Interaction Type ID"); snprintf(r1.value, sizeof(r1.value), "0x%04X", activeInteraction.typeId); r1.iconIdx = SPR_COUNT;
+            UIRow r2; snprintf(r2.label, sizeof(r2.label), "Target Mii 1 Slot"); snprintf(r2.value, sizeof(r2.value), activeInteraction.target1 == 0xFFFF ? "None" : "%u", activeInteraction.target1); r2.iconIdx = SPR_COUNT;
+            UIRow r3; snprintf(r3.label, sizeof(r3.label), "Target Mii 2 Slot"); snprintf(r3.value, sizeof(r3.value), activeInteraction.target2 == 0xFFFF ? "None" : "%u", activeInteraction.target2); r3.iconIdx = SPR_COUNT;
+            rows.push_back(r0); rows.push_back(r1); rows.push_back(r2); rows.push_back(r3);
+            snprintf(bottomHint, sizeof(bottomHint), "[Left/Right] Adjust   [X] Clear Bubble\n[B] Save & Back");
+        } else if (currentState == STATE_EXTRAS_MENU) {
+            headerIcon = SPR_ICON_EXTRAS;
+            snprintf(headerTitle, sizeof(headerTitle), "Quick Extras & Save Repair");
+            const char* labels[7] = {"Fill All Miis' Stomachs (100%)", "Empty All Miis' Stomachs (0%)", "Max All Miis (Lv.99 + Pocket)", "Resolve All Relationship Fights", "Reset Apartment Room Layout", "Reset Mii News Flashes", "Repair Malformed Interactions"};
+            for (int i = 0; i < 7; i++) {
+                UIRow r; snprintf(r.label, sizeof(r.label), "%s", labels[i]); snprintf(r.value, sizeof(r.value), "Run"); r.iconIdx = SPR_COUNT;
+                rows.push_back(r);
+            }
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Execute Tool   [B] Back\n%s", statusToast);
+        } else if (currentState == STATE_TRAVELERS_CONCERT_MENU) {
+            headerIcon = SPR_ICON_CONCERT;
+            snprintf(headerTitle, sizeof(headerTitle), "Travelers & Concert Hall");
+            UIRow r0; snprintf(r0.label, sizeof(r0.label), "StreetPass Travelers (50 Slots)"); snprintf(r0.value, sizeof(r0.value), "View"); r0.iconIdx = SPR_COUNT;
+            UIRow r1; snprintf(r1.label, sizeof(r1.label), "Concert Hall Songs (8 Slots)"); snprintf(r1.value, sizeof(r1.value), "Edit"); r1.iconIdx = SPR_COUNT;
+            rows.push_back(r0); rows.push_back(r1);
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Open   [B] Back");
+        } else if (currentState == STATE_TRAVELERS_LIST) {
+            headerIcon = SPR_ICON_CONCERT;
+            snprintf(headerTitle, sizeof(headerTitle), "StreetPass Travelers (50)");
+            for (int i = 0; i < MAX_TRAVELERS; i++) {
+                TravelerSummary ts;
+                readTravelerSummary(file.get(), currentRegion, i, ts);
+                UIRow r; snprintf(r.label, sizeof(r.label), "[%02d] %s", i + 1, ts.nickname);
+                snprintf(r.value, sizeof(r.value), ts.present ? "Active" : "Empty"); r.iconIdx = SPR_COUNT;
+                rows.push_back(r);
+            }
+            snprintf(bottomHint, sizeof(bottomHint), "[X] Clear Selected Traveler   [B] Back\n%s", statusToast);
+        } else if (currentState == STATE_CONCERT_SONGS) {
+            headerIcon = SPR_ICON_CONCERT;
+            snprintf(headerTitle, sizeof(headerTitle), "Concert Hall Songs");
+            for (int i = 0; i < 8; i++) {
+                ConcertSongData cs;
+                readConcertSong(file.get(), i, cs);
+                UIRow r; snprintf(r.label, sizeof(r.label), "%s", cs.title);
+                snprintf(r.value, sizeof(r.value), "%s", getConcertGenreName(cs.genre)); r.iconIdx = SPR_COUNT;
+                rows.push_back(r);
+            }
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Edit Lyrics & Title   [B] Back");
+        } else if (currentState == STATE_CONCERT_EDIT) {
+            headerIcon = SPR_ICON_CONCERT;
+            snprintf(headerTitle, sizeof(headerTitle), "Edit Song: %s", activeSong.title);
+            UIRow rt; snprintf(rt.label, sizeof(rt.label), "Song Title"); snprintf(rt.value, sizeof(rt.value), "%.22s", activeSong.title); rt.iconIdx = SPR_COUNT;
+            UIRow rg; snprintf(rg.label, sizeof(rg.label), "Musical Genre"); snprintf(rg.value, sizeof(rg.value), "%s", getConcertGenreName(activeSong.genre)); rg.iconIdx = SPR_COUNT;
+            rows.push_back(rt); rows.push_back(rg);
+            for (int l = 0; l < 13; l++) {
+                UIRow rl; snprintf(rl.label, sizeof(rl.label), "Line %02d: %.26s", l + 1, activeSong.lines[l]);
+                rl.value[0] = '\0'; rl.iconIdx = SPR_COUNT;
+                rows.push_back(rl);
+            }
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Edit with Keyboard / Cycle Genre\n[B] Save & Back");
         }
-        else if (currentState == STATE_QUANTITY_SELECT) {
-            CategoryInfo* cat = getCategoryForState(previousCategory);
-            int originalIdx = cat->filteredIndices[savedItemCursor];
-            
-            char itemName[128];
-            if (cat->names != NULL) {
-                strncpy(itemName, cat->names[originalIdx + cat->nameOffset], sizeof(itemName) - 1);
-                itemName[sizeof(itemName) - 1] = '\0';
-                capitalizeString(itemName);
-            } else {
-                snprintf(itemName, sizeof(itemName), "Item #%d", originalIdx + 1);
-            }
-            itemName[sizeof(itemName) - 1] = '\0';
-            capitalizeString(itemName);
 
-            u8 currentOwned = 0;
-            if (fileOpenSuccess) {
-                u32 bytesRead = 0;
-                u64 slotOffset = cat->hasColors
-                    ? (cat->saveBase + (originalIdx * cat->bytesPerItem) + ((selectedColor >= 0) ? selectedColor : 0))
-                    : (cat->saveBase + originalIdx);
-                file->read(slotOffset, &currentOwned, 1, &bytesRead);
-            }
-            
-            snprintf(displayString, sizeof(displayString), 
-                "Set Item Quantity:\n%.40s\n\nCurrent Owned: %u\nNew Quantity:  %d\n\n(Replaces current inventory count)", 
-                itemName, (unsigned)currentOwned, quantityToGive);
-            snprintf(bottomString, sizeof(bottomString), 
-                "Up/Down: +/- 1 | Left/Right: +/- 10\n"
-                "A: Set Quantity | B: Cancel");
-        }
+        // ═══════════════════ RENDERING (#43 UI Overhaul) ════════════
 
-        C2D_Text infoText;
-        C2D_TextParse(&infoText, staticBuf, displayString);
-        C2D_TextOptimize(&infoText);
-        
-        C2D_Text bottomText;
-        C2D_TextParse(&bottomText, bottomBuf, bottomString);
-        C2D_TextOptimize(&bottomText);
-        
+        C2D_TextBufClear(topBuf);
+        C2D_TextBufClear(bottomBuf);
+
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
 
         const u32 colSkyBlue  = C2D_Color32(110, 198, 255, 255);
-        const u32 colCream    = C2D_Color32(255, 253, 245, 232);
-        const u32 colSand     = C2D_Color32(215, 204, 200, 255);
-        const u32 colTextDark = C2D_Color32(62, 39, 35, 255);
+        const u32 colCream    = C2D_Color32(255, 253, 245, 255);
+        const u32 colTextDark = C2D_Color32(58, 34, 28, 255);
+        const u32 colShadowLt = C2D_Color32(255, 255, 255, 190);
+        const u32 colAccent   = C2D_Color32(180, 72, 42, 255);
 
         // ── Top Screen (400x240) ─────────────────────────────────────
         C2D_TargetClear(topTarget, colSkyBlue);
@@ -1230,84 +1600,97 @@ int main(int argc, char** argv) {
 
         if (!fileOpenSuccess) {
             drawSprite(spriteSheet, SPR_MODAL_ERROR, 40.0f, 36.0f);
-            C2D_DrawText(&infoText, C2D_WithColor, 54.0f, 72.0f, 0.5f, 0.48f, 0.48f, colTextDark);
+            drawTextShadowed(topBuf, "ERROR: Save Data Not Found!\nInsert Cartridge or place savedataArc.txt\nin sdmc:/3ds/tlse/",
+                             54.0f, 80.0f, 0.46f, 0.46f, colTextDark, colShadowLt);
         } else {
-            // Warm Notebook Cream card container with Soft Sand border
-            C2D_DrawRectSolid(7.0f, 5.0f, 0.2f, 386.0f, 230.0f, colSand);
-            C2D_DrawRectSolid(8.0f, 6.0f, 0.3f, 384.0f, 228.0f, colCream);
+            // Translucent Header Bar (384x28 at 8,4) — keeps SPR_TOP_BG visible!
+            drawSprite(spriteSheet, SPR_HEADER_BAR, 8.0f, 4.0f);
+            drawTextShadowed(topBuf, headerTitle, 16.0f, 9.0f, 0.46f, 0.46f, colTextDark, colShadowLt);
 
             if (currentState == STATE_MAIN_MENU) {
-                // Region, Media Source, and Backup badges at top-right
                 size_t regBadge = SPR_BADGE_US;
                 if (currentRegion == REGION_EU) regBadge = SPR_BADGE_EU;
                 else if (currentRegion == REGION_JP) regBadge = SPR_BADGE_JP;
                 else if (currentRegion == REGION_KR) regBadge = SPR_BADGE_KR;
-                drawSprite(spriteSheet, regBadge, 346.0f, 10.0f);
-
+                drawSprite(spriteSheet, regBadge, 346.0f, 9.0f);
                 bool isCart = (strncmp(saveSourceDesc, "Cartridge", 9) == 0);
-                drawSprite(spriteSheet, isCart ? SPR_BADGE_CARTRIDGE : SPR_BADGE_SD, 322.0f, 9.0f);
-                if (g_backupCreated) {
-                    drawSprite(spriteSheet, SPR_BADGE_BACKUP_OK, 298.0f, 9.0f);
+                drawSprite(spriteSheet, isCart ? SPR_BADGE_CARTRIDGE : SPR_BADGE_SD, 322.0f, 8.0f);
+                if (g_backupCreated) drawSprite(spriteSheet, SPR_BADGE_BACKUP_OK, 298.0f, 8.0f);
+            } else if (headerIcon < SPR_COUNT) {
+                drawSprite(spriteSheet, headerIcon, 360.0f, 2.0f, 0.9f, 0.9f);
+            }
+
+            // Individual Pill Rows (SPR_ROW_NORMAL / SPR_ROW_SELECTED)
+            int totalRows = (int)rows.size();
+            for (int r = 0; r < MAX_VISIBLE_ROWS && (scrollOffset + r) < totalRows; r++) {
+                int idx = scrollOffset + r;
+                bool isSel = (idx == cursorIndex);
+                float rowY = 38.0f + (float)(r * 21);
+
+                drawSprite(spriteSheet, isSel ? SPR_ROW_SELECTED : SPR_ROW_NORMAL, 20.0f, rowY);
+                if (isSel) {
+                    drawSprite(spriteSheet, SPR_CURSOR_HAND, 2.0f, rowY - 1.0f, 0.9f, 0.9f);
                 }
 
-                // Active category shop icon preview & hand cursor
-                drawSprite(spriteSheet, SPR_ICON_MONEY + (size_t)cursorIndex, 344.0f, 186.0f, 1.25f, 1.25f);
-                drawSprite(spriteSheet, SPR_CURSOR_HAND, 318.0f, 194.0f, 0.9f, 0.9f);
-            } else if (currentState == STATE_MONEY_EDIT) {
-                drawSprite(spriteSheet, SPR_ICON_MONEY, 352.0f, 10.0f, 1.0f, 1.0f);
-            } else if (currentState >= STATE_CATEGORY_FOOD && currentState <= STATE_CATEGORY_TREASURES) {
-                size_t catIcon = SPR_ICON_FOOD + (size_t)(currentState - STATE_CATEGORY_FOOD);
-                drawSprite(spriteSheet, catIcon, 352.0f, 10.0f, 1.0f, 1.0f);
-            } else if (currentState == STATE_COLOR_SELECT) {
-                static const u32 swatchColors[8] = {
-                    C2D_Color32(239, 83, 80, 255),   // Color 1
-                    C2D_Color32(66, 165, 245, 255),  // Color 2
-                    C2D_Color32(102, 187, 106, 255), // Color 3
-                    C2D_Color32(255, 213, 79, 255),  // Color 4
-                    C2D_Color32(171, 71, 188, 255),  // Color 5
-                    C2D_Color32(255, 167, 38, 255),  // Color 6
-                    C2D_Color32(141, 110, 99, 255),  // Color 7
-                    C2D_Color32(96, 125, 139, 255)   // Color 8
-                };
-                CategoryInfo* cat = getCategoryForState(previousCategory);
-                int originalIdx = cat->filteredIndices[savedItemCursor];
-                int validColors = getValidColorCount(cat, originalIdx);
-                for (int c = 0; c < validColors && c < 8; c++) {
-                    C2D_ImageTint tint;
-                    C2D_PlainImageTint(&tint, swatchColors[c], 0.85f);
-                    drawSprite(spriteSheet, SPR_COLOR_SWATCH_RING, 150.0f, 70.0f + (c * 15.0f), 0.9f, 0.9f, &tint);
+                float labelX = 28.0f;
+                if (rows[idx].iconIdx < SPR_COUNT) {
+                    drawSprite(spriteSheet, rows[idx].iconIdx, 24.0f, rowY + 1.0f, 0.5f, 0.5f);
+                    labelX = 44.0f;
+                }
+
+                drawTextShadowed(topBuf, rows[idx].label, labelX, rowY + 2.0f, 0.44f, 0.44f, colTextDark, colShadowLt);
+
+                if (rows[idx].value[0] != '\0') {
+                    C2D_Text vTxt;
+                    C2D_TextParse(&vTxt, topBuf, rows[idx].value);
+                    C2D_TextOptimize(&vTxt);
+                    float vw = 0, vh = 0;
+                    C2D_TextGetDimensions(&vTxt, 0.42f, 0.42f, &vw, &vh);
+                    float vx = 372.0f - vw;
+                    C2D_DrawText(&vTxt, C2D_WithColor, vx + 1.0f, rowY + 3.0f, 0.58f, 0.42f, 0.42f, colShadowLt);
+                    C2D_DrawText(&vTxt, C2D_WithColor, vx, rowY + 2.0f, 0.62f, 0.42f, 0.42f, isSel ? colAccent : colTextDark);
                 }
             }
 
-            C2D_DrawText(&infoText, C2D_WithColor, 14.0f, 10.0f, 0.6f, 0.5f, 0.5f, colTextDark);
+            // Color swatch preview on Color Select screen
+            if (currentState == STATE_COLOR_SELECT) {
+                static const u32 swatchColors[8] = {
+                    C2D_Color32(239, 83, 80, 255),   C2D_Color32(66, 165, 245, 255),
+                    C2D_Color32(102, 187, 106, 255), C2D_Color32(255, 213, 79, 255),
+                    C2D_Color32(171, 71, 188, 255),  C2D_Color32(255, 167, 38, 255),
+                    C2D_Color32(141, 110, 99, 255),  C2D_Color32(96, 125, 139, 255)
+                };
+                for (int c = 0; c < (int)rows.size() - 1 && c < 8; c++) {
+                    C2D_ImageTint tint;
+                    C2D_PlainImageTint(&tint, swatchColors[c], 0.85f);
+                    drawSprite(spriteSheet, SPR_COLOR_SWATCH_RING, 354.0f, 60.0f + (c * 21.0f), 0.9f, 0.9f, &tint);
+                }
+            }
         }
 
         // ── Bottom Screen (320x240) ──────────────────────────────────
         C2D_TargetClear(bottomTarget, colCream);
         C2D_SceneBegin(bottomTarget);
         drawSprite(spriteSheet, SPR_BOTTOM_BG, 0.0f, 0.0f);
-        drawSprite(spriteSheet, SPR_BANNER_LOGO, 32.0f, 34.0f);
+        drawSprite(spriteSheet, SPR_BANNER_LOGO, 32.0f, 24.0f);
+        drawSprite(spriteSheet, SPR_FOOTER_CARD, 12.0f, 104.0f);
 
-        // Cream control card in lower half
-        C2D_DrawRectSolid(15.0f, 104.0f, 0.2f, 290.0f, 100.0f, colSand);
-        C2D_DrawRectSolid(16.0f, 105.0f, 0.3f, 288.0f, 98.0f, colCream);
-
+        C2D_Text bTxt;
+        C2D_TextParse(&bTxt, bottomBuf, bottomHint);
+        C2D_TextOptimize(&bTxt);
         float textW = 0, textH = 0;
-        C2D_TextGetDimensions(&bottomText, 0.5f, 0.5f, &textW, &textH);
+        C2D_TextGetDimensions(&bTxt, 0.43f, 0.43f, &textW, &textH);
         float textX = (320.0f - textW) / 2.0f;
-        float textY = 105.0f + (98.0f - textH) / 2.0f;
-        C2D_DrawText(&bottomText, C2D_WithColor, textX, textY, 0.6f, 0.5f, 0.5f, colTextDark);
+        float textY = 104.0f + (96.0f - textH) / 2.0f;
+        C2D_DrawText(&bTxt, C2D_WithColor, textX + 1.0f, textY + 1.0f, 0.58f, 0.43f, 0.43f, colShadowLt);
+        C2D_DrawText(&bTxt, C2D_WithColor, textX, textY, 0.62f, 0.43f, 0.43f, colTextDark);
 
         C3D_FrameEnd(0);
     }
 
-    // Free resources
-    if (spriteSheet != nullptr) {
-        C2D_SpriteSheetFree(spriteSheet);
-    }
-    C2D_TextBufDelete(staticBuf);
+    if (spriteSheet != nullptr) C2D_SpriteSheetFree(spriteSheet);
+    C2D_TextBufDelete(topBuf);
     C2D_TextBufDelete(bottomBuf);
     exitServices();
-
     return 0;
 }
