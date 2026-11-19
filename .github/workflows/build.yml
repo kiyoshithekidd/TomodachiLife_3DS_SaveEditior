@@ -24,9 +24,9 @@ jobs:
       - name: Install bannertool & makerom
         run: |
           if ! command -v bannertool >/dev/null 2>&1; then
-            curl -fsSL https://github.com/carstene1ns/3ds-bannertool/releases/download/1.2.3/bannertool-1.2.3-linux.tar.gz -o /tmp/bannertool.tar.gz
-            tar -xzf /tmp/bannertool.tar.gz -C /tmp
-            find /tmp -name bannertool -type f -exec install -m 0755 {} /usr/local/bin/bannertool \;
+            curl -fsSL https://github.com/diasurgical/bannertool/releases/download/1.2.0/bannertool.zip -o /tmp/bannertool.zip
+            unzip -o /tmp/bannertool.zip -d /tmp/bannertool
+            find /tmp/bannertool -name bannertool -type f -exec install -m 0755 {} /usr/local/bin/bannertool \;
           fi
           if ! command -v makerom >/dev/null 2>&1; then
             curl -fsSL https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-ubuntu_x86_64.zip -o /tmp/makerom.zip
