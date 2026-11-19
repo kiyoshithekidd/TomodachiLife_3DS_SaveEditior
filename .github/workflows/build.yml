@@ -37,7 +37,7 @@ jobs:
               -o /usr/local/bin/bannertool
           fi
           if ! command -v makerom >/dev/null 2>&1; then
-            curl -fsSL https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-ubuntu_x86_64.zip -o /tmp/makerom.zip
+            curl -fsSL https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.18.4/makerom-v0.18.4-ubuntu_x86_64.zip -o /tmp/makerom.zip
             unzip -o /tmp/makerom.zip -d /tmp/makerom
             find /tmp/makerom -name makerom -type f -exec install -m 0755 {} /usr/local/bin/makerom \;
           fi
