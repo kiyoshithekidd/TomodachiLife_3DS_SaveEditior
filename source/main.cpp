@@ -756,6 +756,7 @@ int main(int argc, char** argv) {
     ConcertSongData activeSong;
     int activeSongIdx = 0;
     char statusToast[96] = "";
+    bool confirmDeleteMii = false;
 
     MenuState currentState = STATE_MAIN_MENU;
     int cursorIndex = 0;
@@ -1484,16 +1485,21 @@ int main(int argc, char** argv) {
                 r.iconIdx = SPR_COUNT;
                 rows.push_back(r);
             }
-            snprintf(bottomHint, sizeof(bottomHint), "[A] Edit Mii   [X] Max All Lv.99\n[B] Back\n%s", statusToast);
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Edit  [X] Max Lv.99  [L/R] .tlamii\n[B] Back  %s", statusToast);
         } else if (currentState == STATE_MII_SUBMENU) {
             headerIcon = SPR_ICON_MII;
             snprintf(headerTitle, sizeof(headerTitle), "Mii: %s (Slot %d)", activeMii.nickname, activeMii.slotIndex + 1);
-            const char* subs[6] = {"Status & Stats", "Profile & Names", "Voice & Personality", "Equipped, Gifts & Foods", "Export .tlmii to SD", "Import .tlmii from SD"};
-            for (int i = 0; i < 6; i++) {
+            const char* subs[8] = {
+                "Status & Stats", "Profile & Names", "Voice & Personality",
+                "Equipped, Gifts & Foods", "Export .tlmii to SD", "Import .tlmii from SD",
+                "Clone Mii to Empty Slot", "Delete Mii (Wipe Slot)"
+            };
+            for (int i = 0; i < 8; i++) {
                 UIRow r; snprintf(r.label, sizeof(r.label), "%s", subs[i]); r.value[0] = '\0'; r.iconIdx = SPR_COUNT;
+                if (i == 7 && confirmDeleteMii) snprintf(r.value, sizeof(r.value), "CONFIRM?");
                 rows.push_back(r);
             }
-            snprintf(bottomHint, sizeof(bottomHint), "[A] Open   [B] Back to Mii List\n%s", statusToast);
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Open / Confirm   [B] Back to Mii List\n%s", statusToast);
         } else if (currentState == STATE_MII_STATUS_EDIT) {
             snprintf(headerTitle, sizeof(headerTitle), "%s — Status", activeMii.nickname);
             const char* labels[9] = {"Level", "Experience", "Pocket Money", "Pampered Score", "Splurge Score", "Stomach Fullness", "Hair Dye", "Apartment Room", "Mii Home ID"};

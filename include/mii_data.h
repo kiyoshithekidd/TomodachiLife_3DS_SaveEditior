@@ -248,12 +248,16 @@ static inline void writeMiiEntry(SafeFile* file, SafeArchive* archive, SaveRegio
     if (archive && archive->get() != 0) archive->commit();
 }
 
+static inline u64 getMiiTableBase(SaveRegion reg) {
+    return (reg == REGION_JP) ? 0x1C40 : 0x1C70;
+}
+
 static inline bool exportMiiTlmii(SafeFile* file, SaveRegion reg, int slot, const char* path) {
     if (!file || !file->isOpen() || slot < 0 || slot >= MAX_MIIS) return false;
     u32 stride = getMiiStride(reg);
     std::vector<u8> buf(stride, 0);
     u32 br = 0;
-    if (R_FAILED(file->read(0x1C70 + (u64)slot * stride, buf.data(), stride, &br)) || br != stride) return false;
+    if (R_FAILED(file->read(getMiiTableBase(reg) + (u64)slot * stride, buf.data(), stride, &br)) || br != stride) return false;
 #ifndef HOST_TEST
     mkdir("sdmc:/3ds", 0777);
     mkdir("sdmc:/3ds/tlse", 0777);
@@ -276,7 +280,117 @@ static inline bool importMiiTlmii(SafeFile* file, SafeArchive* archive, SaveRegi
     fclose(in);
     if (r != stride) return false;
     u32 bw = 0;
-    file->write(0x1C70 + (u64)slot * stride, buf.data(), stride, &bw);
+    file->write(getMiiTableBase(reg) + (u64)slot * stride, buf.data(), stride, &bw);
     if (archive && archive->get() != 0) archive->commit();
     return true;
+}
+
+static inline bool exportAllMiisTlamii(SafeFile* file, SaveRegion reg, const char* path) {
+    if (!file || !file->isOpen() || !path) return false;
+    u32 stride = getMiiStride(reg);
+    size_t totalBytes = (size_t)MAX_MIIS * (size_t)stride;
+    std::vector<u8> buf(totalBytes, 0);
+    u32 br = 0;
+    if (R_FAILED(file->read(getMiiTableBase(reg), buf.data(), (u32)totalBytes, &br)) || br != totalBytes) return false;
+#ifndef HOST_TEST
+    mkdir("sdmc:/3ds", 0777);
+    mkdir("sdmc:/3ds/tlse", 0777);
+    mkdir("sdmc:/3ds/tlse/miis", 0777);
+#endif
+    FILE* out = fopen(path, "wb");
+    if (!out) return false;
+    size_t written = fwrite(buf.data(), 1, totalBytes, out);
+    fclose(out);
+    return (written == totalBytes);
+}
+
+static inline bool importAllMiisTlamii(SafeFile* file, SafeArchive* archive, SaveRegion reg, const char* path) {
+    if (!file || !file->isOpen() || !path) return false;
+    u32 stride = getMiiStride(reg);
+    size_t totalBytes = (size_t)MAX_MIIS * (size_t)stride;
+    FILE* in = fopen(path, "rb");
+    if (!in) return false;
+    fseek(in, 0, SEEK_END);
+    long fileSize = ftell(in);
+    fseek(in, 0, SEEK_SET);
+    if (fileSize != (long)totalBytes) {
+        fclose(in);
+        return false;
+    }
+    std::vector<u8> buf(totalBytes, 0);
+    size_t r = fread(buf.data(), 1, totalBytes, in);
+    fclose(in);
+    if (r != totalBytes) return false;
+    u32 bw = 0;
+    file->write(getMiiTableBase(reg), buf.data(), (u32)totalBytes, &bw);
+    if (archive && archive->get() != 0) archive->commit();
+    return (bw == totalBytes);
+}
+
+static inline int findFirstEmptyMiiSlot(SafeFile* file, SaveRegion reg) {
+    if (!file || !file->isOpen()) return -1;
+    for (int i = 0; i < MAX_MIIS; i++) {
+        u8 regFlag = 0;
+        u32 br = 0;
+        file->read(getMiiFieldOffset(reg, i, 0x22C8, 0x21C8), &regFlag, 1, &br);
+        if (regFlag != 1) return i;
+    }
+    return -1;
+}
+
+static inline int cloneMiiSlot(SafeFile* file, SafeArchive* archive, SaveRegion reg, int srcSlot) {
+    if (!file || !file->isOpen() || srcSlot < 0 || srcSlot >= MAX_MIIS) return -1;
+    u8 srcReg = 0;
+    u32 br = 0;
+    file->read(getMiiFieldOffset(reg, srcSlot, 0x22C8, 0x21C8), &srcReg, 1, &br);
+    if (srcReg != 1) return -1;
+
+    int dstSlot = findFirstEmptyMiiSlot(file, reg);
+    if (dstSlot < 0) return -1;
+
+    u32 stride = getMiiStride(reg);
+    std::vector<u8> buf(stride, 0);
+    u64 base = getMiiTableBase(reg);
+    if (R_FAILED(file->read(base + (u64)srcSlot * stride, buf.data(), stride, &br)) || br != stride) return -1;
+
+    u32 bw = 0;
+    file->write(base + (u64)dstSlot * stride, buf.data(), stride, &bw);
+
+    // Assign a free apartment room (0..99) so the clone does not collide with another Mii
+    bool usedRooms[100] = {false};
+    for (int i = 0; i < MAX_MIIS; i++) {
+        if (i == dstSlot) continue;
+        u8 rf = 0;
+        file->read(getMiiFieldOffset(reg, i, 0x22C8, 0x21C8), &rf, 1, &br);
+        if (rf == 1) {
+            u8 rm = 0;
+            file->read(getMiiFieldOffset(reg, i, 0x22A8, 0x21A8), &rm, 1, &br);
+            if (rm < 100) usedRooms[rm] = true;
+        }
+    }
+    u8 freeRoom = (u8)dstSlot;
+    for (int r = 0; r < 100; r++) {
+        if (!usedRooms[r]) { freeRoom = (u8)r; break; }
+    }
+    file->write(getMiiFieldOffset(reg, dstSlot, 0x22A8, 0x21A8), &freeRoom, 1, &bw);
+    u8 regOne = 1;
+    file->write(getMiiFieldOffset(reg, dstSlot, 0x22C8, 0x21C8), &regOne, 1, &bw);
+
+    if (archive && archive->get() != 0) archive->commit();
+    return dstSlot;
+}
+
+static inline bool deleteMiiSlot(SafeFile* file, SafeArchive* archive, SaveRegion reg, int slot) {
+    if (!file || !file->isOpen() || slot < 0 || slot >= MAX_MIIS) return false;
+    u8 regFlag = 0;
+    u32 br = 0;
+    file->read(getMiiFieldOffset(reg, slot, 0x22C8, 0x21C8), &regFlag, 1, &br);
+    if (regFlag != 1) return false;
+
+    u32 stride = getMiiStride(reg);
+    std::vector<u8> zeros(stride, 0);
+    u32 bw = 0;
+    file->write(getMiiTableBase(reg) + (u64)slot * stride, zeros.data(), stride, &bw);
+    if (archive && archive->get() != 0) archive->commit();
+    return (bw == stride);
 }

@@ -189,3 +189,17 @@ static inline void acquaintAllRegisteredMiis(SafeFile* file, SafeArchive* archiv
     }
     if (archive && archive->get() != 0) archive->commit();
 }
+
+static inline void clearMiiRelationships(SafeFile* file, SafeArchive* archive, SaveRegion reg, int slot) {
+    if (!file || !file->isOpen() || slot < 0 || slot >= MAX_MIIS) return;
+    u8 zero = 0;
+    u32 bw = 0;
+    u8 zeros[MAX_MIIS] = {0};
+    file->write(getRelFeelingOffset(reg, slot, 0), zeros, MAX_MIIS, &bw);
+    file->write(getRelTypeOffset(reg, slot, 0), zeros, MAX_MIIS, &bw);
+    for (int k = 0; k < MAX_MIIS; k++) {
+        file->write(getRelFeelingOffset(reg, k, slot), &zero, 1, &bw);
+        file->write(getRelTypeOffset(reg, k, slot), &zero, 1, &bw);
+    }
+    if (archive && archive->get() != 0) archive->commit();
+}
