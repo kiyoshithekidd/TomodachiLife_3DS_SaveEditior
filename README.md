@@ -27,14 +27,25 @@ If you have a modded 3DS and want to use the editor:
 | **Goods** | 18 useful items (US) / 17 items (EU) | ✅ Working |
 | **Treasures** | 152 collectible items (US) / 155 items (EU) | ✅ Working |
 | **Special Unlock** | Bulk-unlock SpotPass/StreetPass Clothes, Hats & Special Foods (`x99`) | ✅ Working |
+| **Mii Editor** | Profile (Name, Birthday, Catchphrase, Sharing/Copying flags), Voice & Personality, Status (Lv.1–99, EXP, Stomach, Pocket Money), Equipped Items, Favorite Foods, Level-Up Gifts, `.tlmii`/`.tlamii` Export & Import, Clone & Delete Mii | ✅ Working |
+| **Relationships** | View & edit Mii-to-Mii Relationship Types (with symmetric Spouse/Sweetheart enforcement) & Feelings (`0–200`), Resolve All Fights, Max All Feelings | ✅ Working |
+| **Island & Config** | Edit Island Name, Problems Solved, Weddings, StreetPass Export Color, and unlock all 24 Island Buildings & 10 Rankings | ✅ Working |
+| **Travelers & Concert** | Edit StreetPass Travelers (`Nickname`, `Message`, `On Island`, `Level`, `EXP`), Clear Traveler Slots, and edit Concert Hall Song Titles/Genres/Lyrics | ✅ Working |
+| **Interactions & Extras** | Edit/Clear Mii Interactions, Fill/Empty All Stomachs, Max All Miis Lv.99, Reset Room Layout / News Flashes, Repair Malformed Interactions, Verify & Repair Mii CFSD CRC16-XMODEM Checksums | ✅ Working |
+| **Touch & Keyboard UI** | Full Bottom-Screen Touch Navigation (tap rows/buttons/action bar) + native 3DS Software Keyboard (`swkbd`) for UTF-16 text fields | ✅ Working |
 
 ### Controls
 
-#### Main Menu
-- **D-Pad Up / Down**: Navigate menu options
-- **A**: Select option / Trigger **Unlock All Special Items**
-- **L / R**: Switch item/offset region profile (`US` / `EU`)
+#### Global & Touch Screen
+- **D-Pad Up / Down**: Navigate list items
+- **A**: Select / Edit / Confirm
+- **B**: Save & Back / Cancel
+- **Touch Screen**: Tap any visible row, Main Menu tile, or Bottom Action Bar button (`Back`, `Action`, `Save & Exit`)
 - **START**: Commit save changes and exit
+
+#### Main Menu
+- **L / R**: Switch item/offset region profile (`US` / `EU`)
+- **Y**: Restore from `sdmc:/3ds/tlse/savedataArc.bak` (press twice to confirm)
 
 #### Money Editor
 - **A**: Add `+$100.00`
@@ -49,6 +60,11 @@ If you have a modded 3DS and want to use the editor:
 - **A**: Select item / color / Set exact item quantity (`1–99`)
 - **X**: Unlock All items in the current category (`x99`, writing only valid color variants)
 - **B**: Back / Cancel
+
+#### Mii Editor & Relationships
+- **Mii Select**: `[A]` Edit Mii, `[X]` Max All Miis (Lv.99 + Pocket Money), `[L]` Export `all_miis.tlamii`, `[R]` Import `all_miis.tlamii`
+- **Mii Submenu**: Edit Profile / Voice & Personality / Status / Equipped / Foods / Gifts, Export/Import `.tlmii`, Clone Mii, or Delete Mii (two-press confirmation)
+- **Relationships**: `[A]` Select Mii pair, `[Y]` Resolve All Fights, `[X]` Max All Acquainted Feelings (`200`)
 
 ### Granular Set-Quantity & Color Safety
 - **Exact Quantity Preview**: When editing an individual item, the screen displays both your **Current Owned** count and the **New Quantity** (`1–99`) that will replace it.
@@ -65,25 +81,41 @@ If you have a modded 3DS and want to use the editor:
 | Goods | `0x18F0` | `0x1920` | 1 |
 | Treasures | `0x1902` | `0x1931` | 1 |
 | Special Foods | `0x19E2` (`+0x19E4..0x1A12`) | `0x1A14` (`+0x1A16..0x1A44`) | 1 (48 slots) |
+| Mii Table (`CFSD` + Status) | `0x1C70` (`0x660` stride) | `0x1C70` (`0x660` stride) | `0x660` per slot (CRC16-XMODEM at `+0x5E`) |
 | Money | `0x1E4BC0` | `0x1E4BC8` | 4 (`u32`, max `99999999` cents) |
 | Island Name | `0x1E4BCC` | `0x1E4BD4` | 22 (UTF-16LE) |
 
-*(JP Money/Island Name offsets `0x14F2A0`/`0x14F2AC` and KR offsets `0x1EFA00`/`0x1EFA0C` are also automatically detected when probing JP `0x00035100` or KR `0x0008C500` saves.)*
+*(JP and KR region offsets are also automatically detected when probing JP `0x00035100` or KR `0x0008C500` saves.)*
 
-- **Language**: C++17 using `libctru` and `citro2d`.
-- **Credits**: Save offsets and item mapping referenced from the [VB.NET Tomodachi Life Save Editor by Brionjv](https://github.com/Brionjv/Tomodachi-Life-Save-Editor) and verified against RomFS MSBT message dumps.
+- **Language**: C++11/17 using `libctru`, `citro3d`, and `citro2d`.
+- **Credits**: Save offsets and item mapping referenced from the [VB.NET Tomodachi Life Save Editor by Brionjv](https://github.com/Brionjv/Tomodachi-Life-Save-Editor) and verified against RomFS MSBT message dumps and live save files.
 
 ---
 
 ## Changelog
 
+### v0.9.1 — Loading Feedback, Traveler Editor, CFSD CRC16 & Mii Flags (2026-11-18)
+- **Loading & Backup Progress Screens (`#55`)**: Added immediate busy frames during startup archive probing, the first-edit ~2 MB `savedataArc.bak` backup, and bulk SD/save operations so the 3DS never appears frozen.
+- **Restored Bundle 2 Input Handlers (`#52`)**: Restored `STATE_MII_SELECT` `[L]/[R]` `.tlamii` export/import and `STATE_MII_SUBMENU` `Clone`/`Delete Mii` controls.
+- **Travelers / StreetPass Port Editor (`#56`)**: Added `STATE_TRAVELER_EDIT` to edit Traveler `Nickname`, `Message`, `On Island`, `Level`, and `Experience`.
+- **Mii CFSD CRC16-XMODEM Checksums (`#57`)**: Auto-recalculates CFSD CRC16-XMODEM (`poly=0x1021`, 2-byte BE at `+0x5E`) on every Mii write and adds `"Verify & Repair Mii Checksums"` to `Extras`.
+- **Mii Catchphrase & Permission Flags (`#58`)**: Added `Catchphrase` (16 UTF-16LE chars), `Sharing Allowed`, and `Copying Allowed` toggles to `Mii Profile`.
+
+### v0.9.0 — Full Feature Parity & Touch Controls (2026-11-18)
+- **Bundle 1 (`#50`, `#51`, `#53`)**: Added Equipped Items, Favorite Foods, Level-Up Gifts, Relationships `Resolve All Fights` / `Max All Feelings`, and `Island Info` (`Export Color`, `Problems Solved`, `Weddings`).
+- **Bundle 2 (`#52`)**: Added bulk `.tlamii` export/import, `Clone Mii`, and `Delete Mii` with relationship matrix cleanup.
+- **Bundle 3 (`#54`)**: Added full bottom-screen Touch Controls (tappable Main Menu tiles, list rows, and bottom action bar buttons).
+
+### v0.8.0 — Mii Editor, Relationships, Island, Travelers, Concert & Extras (2026-11-18)
+- Added full Mii Editor (`Profile`, `Voice & Personality`, `Status`, `.tlmii`), Relationships Matrix Editor, Island Buildings/Rankings Unlocker, Travelers List, Concert Hall Song Editor, Mii Interactions Editor, and Quick Extras & Save Repair.
+- Added native 3DS Software Keyboard (`swkbd`) for editing UTF-16 strings (Island Name, Mii names, Song titles/lyrics).
+
+### v0.7.1 — Fix Unlock All Save Corruption & Backup Restore (2026-11-15)
+- Fixed per-item valid color masks on `Unlock All` (`X`) and added `[Y]` Restore from Backup on the Main Menu.
+
 ### v0.7.0 — Visual Assets & *Tomodachi Life* UI Overhaul (2026-11-14)
 - **Custom 3DS Homebrew Icon (`icon.png`)**: Embedded a custom `48×48` *Tomodachi Life* island tower icon into the `.3dsx` SMDH metadata (`#28`).
-- **`tex3ds` Sprite Atlas (`romfs:/gfx/sprites.t3x`)**: Added 24 custom PNG sprites compiled into RomFS via `tex3ds` (`#40`), including:
-  - Daylight *Tomodachi Life* island vista top backdrop (`400×240`) and polka-dot bottom backdrop (`320×240`) with title banner logo (`256×64`).
-  - Warm Notebook Cream cards (`#FFFDF5`) with Charcoal Espresso text (`#3E2723`) and Soft Sand borders (`#D7CCC8`).
-  - 8 custom shop category icons (`Money`, `Food`, `Clothes`, `Hats`, `Interiors`, `Goods`, `Treasures`, `Special Unlock`) + pointing hand cursor.
-  - Regional pill badges (`US`, `EU`, `JP`, `KR`), save source badges (`Cartridge` vs. `SD`), green `Backup OK` shield badge, error modal frame, and `C2D_ImageTint` color swatch rings in the Color Selector.
+- **`tex3ds` Sprite Atlas (`romfs:/gfx/sprites.t3x`)**: Added custom PNG sprites compiled into RomFS via `tex3ds` (`#40`), including daylight island vista backdrops, Warm Notebook Cream cards, shop category icons, regional badges, and color swatch rings.
 
 ### v0.6.0 — Complete QA Overhaul, Safe Special Unlocks & Multi-Region Detection (2026-11-14)
 - **Fixed US Hats Base Offset (`#29`, `#20`)**: Corrected US Hats `saveBase` in `updateRegionOffsets()` from `0xE30` (SpotPass Clothes area) to `0xFF8`.
@@ -102,35 +134,16 @@ If you have a modded 3DS and want to use the editor:
 - Added `L/R` US/EU region toggle and EU item datasets (`food`, `interiors`, `goods`, `treasures`).
 
 ### v0.4.0 — Inventory Offset Fixes (2026-05-11)
-- **Treasures fixed**: Rebuilt the treasure dataset using the true internal game IDs extracted directly from the RomFS dump. Items now map correctly (e.g. "Gold coin" no longer gives an hourglass).
-- **Interiors fixed**: Rebuilt the interiors dataset from the RomFS `Room_US_English_LZ.bin` file. Interior names now match the exact in-game order (e.g. "Rain" no longer gives "Arabian").
-- **Hats offset corrected**: Hat memory block base offset corrected from `0xE30` to `0xFF8`, and array start index corrected from `1431` to `2601` (the "bear hat"). Hats should now apply correctly.
-- **Treasures count updated**: Dataset count updated from 166 → 153 to reflect the verified US item list.
-- **Special Unlock disabled**: The "Unlock All Special Items" feature is temporarily disabled to prevent save file corruption on fresh saves. The bottom screen now shows a clear "NOT WORKING (WIP)" notice when hovering over this option.
+- Corrected Treasure, Interior, and Hat dataset offsets and disabled unsafe Special Unlock pending per-slot mapping.
 
 ### v0.3.0 — Inventory Overhaul (2026-05-04)
-- **Granular quantity control**: Choose 1–99 for any item instead of bulk "Unlock All"
-- **Interiors**: Added 102 interior names (US) with per-item editing
-- **Treasures**: Added 166 treasure names (US) with per-item editing
-- **Goods**: Added 18 useful items (medicine, travel tickets, etc.) as a new menu category
-- **Hats title fix**: Hats list now displays "Hats" instead of generic "Items"
-- **Goods menu entry**: Goods is now accessible from the main menu
-- **Back-navigation fix**: Pressing B in any category returns to the correct menu position
+- Added granular quantity control (`1–99`), Interiors, Treasures, and Goods.
 
 ### v0.2.0 — Food & Clothes (2026-05-03)
-- **Food inventory**: Full 231-item US food list with 1:1 save-file mapping
-- **Clothes**: 447 clothing items with 8-color variant support
-- **Hats**: 171 hat items with color selection
-- **Unlock All**: X button for bulk-unlock within any category list
-- **Color picker**: Select individual colors or "All Colors" for clothes/hats
-- **Filtering**: Automatically hides unknown/metadata items from lists
+- Added Food, Clothes, and Hats with color selection.
 
 ### v0.1.0 — Foundation
-- **Money editor**: Add $100 increments or reset to $0
-- **Island name display**: Reads and displays UTF-16 island name
-- **Save & commit**: Press START to safely write and commit save data
-- **RAII wrappers**: Crash-safe file and archive handling
-- **Special unlock**: Bulk-write SpotPass/StreetPass clothes and hats
+- Initial Money editor, Island name display, and RAII save/archive handling.
 
 ---
 
@@ -138,7 +151,7 @@ If you have a modded 3DS and want to use the editor:
 
 ### Prerequisites
 1. Install [devkitPro](https://devkitpro.org/wiki/Getting_Started).
-2. Ensure `3ds-dev` (`devkitARM`, `libctru`, `citro3d`, `citro2d`, `3dsxtool`, `smdhtool`) is installed via pacman (`pacman -S 3ds-dev`).
+2. Ensure `3ds-dev` (`devkitARM`, `libctru`, `citro3d`, `citro2d`, `3dsxtool`, `smdhtool`, `tex3ds`) is installed via pacman (`pacman -S 3ds-dev`).
 
 ### Compilation
 - **Windows**: Run the included `build.bat`.
@@ -149,20 +162,20 @@ The resulting `TomodachiLife_3DS_SaveEditor.3dsx` will be generated in the root 
 ### Project Structure
 ```
 ├── source/
-│   └── main.cpp                  # All application logic, save probing, backup & UI
+│   └── main.cpp                  # Application logic, touch/button UI, swkbd & rendering
 ├── include/
-│   ├── food_names.h               # 231 US food items
-│   ├── food_names_eu.h            # 252 EU food items
-│   ├── clothes_dataset.h          # 6932 US clothes/hats entries
-│   ├── clothes_dataset_eu.h       # 6904 EU clothes/hats entries
-│   ├── interiors_dataset.h        # 102 US interior names
-│   ├── interiors_dataset_eu.h     # 102 EU interior names
-│   ├── treasures_dataset.h        # 152 US treasure names
-│   ├── treasures_dataset_eu.h     # 155 EU treasure names
-│   ├── goods_dataset.h            # 18 US goods items
-│   └── goods_dataset_eu.h         # 17 EU goods items
+│   ├── save_io.h                 # SafeFile/SafeArchive RAII, auto-backup, UTF-16 helpers
+│   ├── mii_data.h                # Mii CFSD/Status/Foods/Gifts, CRC16-XMODEM, .tlmii/.tlamii
+│   ├── relationships_data.h      # Relationship matrix, symmetric Spouse/Sweetheart, fights
+│   ├── island_data.h             # Island info/config, Travelers, Concert songs, Interactions
+│   ├── food_names.h              # US & EU food items
+│   ├── clothes_dataset.h         # US & EU clothes/hats entries & valid color counts
+│   ├── interiors_dataset.h       # US & EU interior names
+│   ├── treasures_dataset.h       # US & EU treasure names
+│   └── goods_dataset.h           # US & EU goods items
+├── gfx/                          # PNG sprites & tex3ds atlas (.t3s)
 ├── Makefile
-├── build.bat                      # Windows build helper
+├── build.bat                     # Windows build helper
 └── LICENSE
 ```
 
