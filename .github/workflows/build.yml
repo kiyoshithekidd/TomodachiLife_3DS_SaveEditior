@@ -24,9 +24,17 @@ jobs:
       - name: Install bannertool & makerom
         run: |
           if ! command -v bannertool >/dev/null 2>&1; then
-            curl -fsSL https://github.com/diasurgical/bannertool/releases/download/1.2.0/bannertool.zip -o /tmp/bannertool.zip
-            unzip -o /tmp/bannertool.zip -d /tmp/bannertool
-            find /tmp/bannertool -name bannertool -type f -exec install -m 0755 {} /usr/local/bin/bannertool \;
+            curl -fsSL https://github.com/carstene1ns/3ds-bannertool/releases/download/1.2.3/bannertool-1.2.3.tar.gz -o /tmp/bt.tar.gz
+            mkdir -p /tmp/bt-src
+            tar -xzf /tmp/bt.tar.gz -C /tmp/bt-src --strip-components=1
+            g++ -std=c++17 -O2 -DVERSION=\"1.2.3\" -DSTBI_ONLY_PNG -DSTBI_NO_LINEAR -DSTBI_NO_STDIO \
+              -DSTB_VORBIS_NO_PUSHDATA_API -DSTB_VORBIS_NO_STDIO -DDR_WAV_NO_STDIO \
+              -I/tmp/bt-src/source -I/tmp/bt-src/source/pc \
+              /tmp/bt-src/source/main.cpp /tmp/bt-src/source/log.cpp /tmp/bt-src/source/types.cpp \
+              /tmp/bt-src/source/utils.cpp /tmp/bt-src/source/3ds/cbmd.cpp /tmp/bt-src/source/3ds/cwav.cpp \
+              /tmp/bt-src/source/3ds/lz11.cpp /tmp/bt-src/source/pc/stb_image.cpp \
+              /tmp/bt-src/source/pc/stb_vorbis.cpp /tmp/bt-src/source/pc/dr_wav.cpp \
+              -o /usr/local/bin/bannertool
           fi
           if ! command -v makerom >/dev/null 2>&1; then
             curl -fsSL https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-ubuntu_x86_64.zip -o /tmp/makerom.zip
