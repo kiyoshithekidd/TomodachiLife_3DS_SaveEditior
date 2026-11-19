@@ -6,14 +6,15 @@ A native 3DS homebrew application to edit *Tomodachi Life* save files (`savedata
 
 If you have a modded 3DS and want to use the editor:
 
-1. **Download**: Grab the latest `TomodachiLife_3DS_SaveEditor.3dsx` from the [Releases](https://github.com/kiyoshithekidd/TomodachiLife_3DS_SaveEditior/releases) page.
-2. **Copy**: Put the `.3dsx` file into the `/3ds/` folder on your SD card.
+1. **Download**: Grab the latest `TomodachiLife_3DS_SaveEditor.3dsx` or `TomodachiLife_3DS_SaveEditor.cia` from the [Releases](https://github.com/kiyoshithekidd/TomodachiLife_3DS_SaveEditior/releases) page.
+2. **Install**:
+   - **`.cia` (Home Menu)**: Copy `TomodachiLife_3DS_SaveEditor.cia` to your SD card, install it with **FBI**, and launch it directly from the 3DS Home Menu.
+   - **`.3dsx` (Homebrew Launcher)**: Copy `TomodachiLife_3DS_SaveEditor.3dsx` into `/3ds/` on your SD card and launch it from the Homebrew Launcher.
 3. **Save Detection & Automatic Backups**:
    - The editor automatically probes inserted **Cartridges** first, then **SD Digital** titles (`US`, `EU`, `JP`, `KR`), and finally falls back to a raw Checkpoint file at `sdmc:/3ds/tlse/savedataArc.txt`.
    - Before writing any change during a session, the editor automatically backs up your unmodified save to `sdmc:/3ds/tlse/savedataArc.bak`.
    - *(Recommended)* Still keep a manual **Checkpoint** or **JKSM** backup for extra peace of mind!
-4. **Launch**: Open the Homebrew Launcher on your 3DS and select **Tomodachi Life Save Editor**.
-5. **Save**: After making changes, press **START** to commit and exit.
+4. **Save**: After making changes, press **START** to commit and exit.
 
 ## Features
 
@@ -94,6 +95,9 @@ If you have a modded 3DS and want to use the editor:
 
 ## Changelog
 
+### v0.9.2 — Home Menu `.cia` Build Support (2026-11-18)
+- **`.cia` Packaging (`#59`)**: Added `make cia` target (`bannertool` + `makerom`), `app.rsf` (UniqueId `0xF8C30` with SDMC & save archive access), custom Home Menu banner (`gfx/banner.png` + `gfx/banner.wav`), and automated `.cia` release uploads alongside `.3dsx`.
+
 ### v0.9.1 — Loading Feedback, Traveler Editor, CFSD CRC16 & Mii Flags (2026-11-18)
 - **Loading & Backup Progress Screens (`#55`)**: Added immediate busy frames during startup archive probing, the first-edit ~2 MB `savedataArc.bak` backup, and bulk SD/save operations so the 3DS never appears frozen.
 - **Restored Bundle 2 Input Handlers (`#52`)**: Restored `STATE_MII_SELECT` `[L]/[R]` `.tlamii` export/import and `STATE_MII_SUBMENU` `Clone`/`Delete Mii` controls.
@@ -155,9 +159,10 @@ If you have a modded 3DS and want to use the editor:
 
 ### Compilation
 - **Windows**: Run the included `build.bat`.
-- **Linux/macOS**: Run `make` in the terminal.
+- **Linux/macOS (`.3dsx`)**: Run `make` in the terminal.
+- **Linux/macOS (`.cia`)**: Ensure `bannertool` and `makerom` are on your `PATH` and run `make cia`.
 
-The resulting `TomodachiLife_3DS_SaveEditor.3dsx` will be generated in the root directory.
+The resulting `TomodachiLife_3DS_SaveEditor.3dsx` (and `.cia` when building `make cia`) will be generated in the root directory.
 
 ### Project Structure
 ```
@@ -173,7 +178,8 @@ The resulting `TomodachiLife_3DS_SaveEditor.3dsx` will be generated in the root 
 │   ├── interiors_dataset.h       # US & EU interior names
 │   ├── treasures_dataset.h       # US & EU treasure names
 │   └── goods_dataset.h           # US & EU goods items
-├── gfx/                          # PNG sprites & tex3ds atlas (.t3s)
+├── gfx/                          # PNG sprites, tex3ds atlas (.t3s), banner.png & banner.wav
+├── app.rsf                       # CIA Rom Specification File (Title ID & permissions)
 ├── Makefile
 ├── build.bat                     # Windows build helper
 └── LICENSE
