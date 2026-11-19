@@ -653,6 +653,47 @@ struct UIRow {
     size_t iconIdx; // SPR_COUNT means none
 };
 
+struct TouchButton {
+    float x, y, w, h, scale;
+    u32 keyMask;
+    const char* label;
+};
+
+static inline int getBottomButtons(MenuState state, bool fileOpen, TouchButton outBtns[5]) {
+    if (!fileOpen) {
+        outBtns[0] = {128.0f, 186.0f, 64.0f, 36.0f, 1.0f, KEY_START, "Exit"};
+        return 1;
+    }
+    if (state == STATE_MONEY_EDIT || state == STATE_QUANTITY_SELECT) {
+        outBtns[0] = {12.0f,  186.0f, 64.0f, 36.0f, 1.0f, KEY_DDOWN, "-1"};
+        outBtns[1] = {89.0f,  186.0f, 64.0f, 36.0f, 1.0f, KEY_DUP,   "+1"};
+        outBtns[2] = {167.0f, 186.0f, 64.0f, 36.0f, 1.0f, KEY_A,     "Apply"};
+        outBtns[3] = {244.0f, 186.0f, 64.0f, 36.0f, 1.0f, KEY_B,     "Cancel"};
+        return 4;
+    }
+    if (state == STATE_MII_STATUS_EDIT || state == STATE_MII_PROFILE_EDIT ||
+        state == STATE_MII_VOICE_PERS  || state == STATE_MII_GIFTS_FOODS  ||
+        state == STATE_REL_EDIT        || state == STATE_ISLAND_CONFIG    ||
+        state == STATE_ISLAND_INFO     || state == STATE_INTERACTION_EDIT ||
+        state == STATE_CONCERT_EDIT) {
+        const float w = 64.0f * 0.85f;
+        const float h = 36.0f * 0.85f;
+        outBtns[0] = {10.0f,  189.0f, w, h, 0.85f, KEY_DUP,    "Prev"};
+        outBtns[1] = {71.0f,  189.0f, w, h, 0.85f, KEY_DDOWN,  "Next"};
+        outBtns[2] = {133.0f, 189.0f, w, h, 0.85f, KEY_DLEFT,  "-"};
+        outBtns[3] = {194.0f, 189.0f, w, h, 0.85f, KEY_DRIGHT, "+"};
+        outBtns[4] = {256.0f, 189.0f, w, h, 0.85f, KEY_B,      "Save"};
+        return 5;
+    }
+    outBtns[0] = {12.0f,  186.0f, 64.0f, 36.0f, 1.0f, KEY_DUP,   "Up"};
+    outBtns[1] = {89.0f,  186.0f, 64.0f, 36.0f, 1.0f, KEY_DDOWN, "Down"};
+    outBtns[2] = {167.0f, 186.0f, 64.0f, 36.0f, 1.0f, KEY_A,     "Open"};
+    outBtns[3] = {244.0f, 186.0f, 64.0f, 36.0f, 1.0f,
+                  (state == STATE_MAIN_MENU) ? (u32)KEY_START : (u32)KEY_B,
+                  (state == STATE_MAIN_MENU) ? "Exit" : "Back"};
+    return 4;
+}
+
 // ── Main ─────────────────────────────────────────────────────────────
 
 int main(int argc, char** argv) {
@@ -1818,8 +1859,8 @@ int main(int argc, char** argv) {
         C2D_TargetClear(bottomTarget, colCream);
         C2D_SceneBegin(bottomTarget);
         drawSprite(spriteSheet, SPR_BOTTOM_BG, 0.0f, 0.0f);
-        drawSprite(spriteSheet, SPR_BANNER_LOGO, 32.0f, 24.0f);
-        drawSprite(spriteSheet, SPR_FOOTER_CARD, 12.0f, 104.0f);
+        drawSprite(spriteSheet, SPR_BANNER_LOGO, 32.0f, 10.0f);
+        drawSprite(spriteSheet, SPR_FOOTER_CARD, 12.0f, 80.0f);
 
         C2D_Text bTxt;
         C2D_TextParse(&bTxt, bottomBuf, bottomHint);
@@ -1827,9 +1868,24 @@ int main(int argc, char** argv) {
         float textW = 0, textH = 0;
         C2D_TextGetDimensions(&bTxt, 0.43f, 0.43f, &textW, &textH);
         float textX = (320.0f - textW) / 2.0f;
-        float textY = 104.0f + (96.0f - textH) / 2.0f;
+        float textY = 80.0f + (96.0f - textH) / 2.0f;
         C2D_DrawText(&bTxt, C2D_WithColor, textX + 1.0f, textY + 1.0f, 0.58f, 0.43f, 0.43f, colShadowLt);
         C2D_DrawText(&bTxt, C2D_WithColor, textX, textY, 0.62f, 0.43f, 0.43f, colTextDark);
+
+        TouchButton bBtns[5];
+        int bBtnCount = getBottomButtons(currentState, fileOpenSuccess, bBtns);
+        for (int i = 0; i < bBtnCount; i++) {
+            drawSprite(spriteSheet, SPR_BTN_STEPPER, bBtns[i].x, bBtns[i].y, bBtns[i].scale, bBtns[i].scale);
+            C2D_Text lblTxt;
+            C2D_TextParse(&lblTxt, bottomBuf, bBtns[i].label);
+            C2D_TextOptimize(&lblTxt);
+            float lw = 0, lh = 0;
+            C2D_TextGetDimensions(&lblTxt, 0.42f, 0.42f, &lw, &lh);
+            float lx = bBtns[i].x + (bBtns[i].w - lw) / 2.0f;
+            float ly = bBtns[i].y + (bBtns[i].h - lh) / 2.0f - 1.0f;
+            C2D_DrawText(&lblTxt, C2D_WithColor, lx + 1.0f, ly + 1.0f, 0.58f, 0.42f, 0.42f, colShadowLt);
+            C2D_DrawText(&lblTxt, C2D_WithColor, lx, ly, 0.62f, 0.42f, 0.42f, colTextDark);
+        }
 
         C3D_FrameEnd(0);
     }
