@@ -22,8 +22,10 @@ struct MiiEntry {
     char nickname[32];
     char firstName[48];
     char lastName[48];
-    u8 gender;          // 0 = Male, 1 = Female
-    u8 favColor;        // 0..11
+    u8 gender;          // 0 = Male, 1 = Female (0x1C88 bit 0)
+    u8 birthMonth;      // 0 = Unset, 1..12 (0x1C88 bits 4..1)
+    u8 birthDay;        // 0 = Unset, 1..31 (0x1C88 bits 7..5 | 0x1C89 bits 1..0)
+    u8 favColor;        // 0..11 (0x1C89 bits 5..2)
     u8 relationToYou;   // 0..11
     u8 grownUpFlag;     // 1 = Adult (can marry), 2 = Kid
     // Status
@@ -37,21 +39,21 @@ struct MiiEntry {
     u8 apartmentRoom;   // 0..99
     u8 miiHome;         // 0..49 or 0xFF
     // Equipped & Gifts
-    u16 equippedClothes;
-    u8 equippedClothesColor;
-    u16 equippedHat;
-    u8 equippedHatColor;
-    u16 equippedInterior;
-    u16 levelUpGifts[8];
+    u16 equippedClothes;   // 0x1D42 US/EU/KR, 0x1D12 JP
+    u16 equippedHat;       // 0x1D44 US/EU/KR, 0x1D14 JP (0xFFFF = None)
+    u16 equippedInterior;  // 0x1F20 US/EU/KR, 0x1E20 JP
+    u16 levelUpGifts[8];   // 0x2258..0x2266 US/EU/KR, 0x2158..0x2166 JP (0..27 or 0xFFFF)
     // Voice & Personality
     u8 voice[6];        // 0..100
     u8 personality[5];  // 1..8
-    // Food Likes / Dislikes
-    u16 favFood1;
-    u16 favFood2;
-    u16 superFavFood;
-    u16 worstFood;
-    u16 worstEverFood;
+    // Food Likes / Dislikes (0x2298..0x22A4 US/EU/KR, 0x2198..0x21A4 JP)
+    u16 superFavFood;   // 0x2298
+    u16 worstEverFood;  // 0x229A
+    u16 allTimeFavFood; // 0x229C
+    u16 worstFood;      // 0x229E
+    u16 favFood1;       // 0x22A0
+    u16 favFood2;       // 0x22A2
+    u16 favFood3;       // 0x22A4
 };
 
 static inline const char* getFavColorName(u8 c) {
@@ -62,12 +64,33 @@ static inline const char* getFavColorName(u8 c) {
     return (c < 12) ? NAMES[c] : "Unknown";
 }
 
+static inline const char* getMonthName(u8 m) {
+    static const char* NAMES[13] = {
+        "Unset", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    };
+    return (m <= 12) ? NAMES[m] : "Unset";
+}
+
 static inline const char* getRelationName(u8 r) {
     static const char* NAMES[12] = {
         "None", "Spouse", "Parent", "Child", "Sibling", "Friend",
         "Relative", "Self", "Other", "Grandparent", "Grandchild", "Cousin"
     };
     return (r < 12) ? NAMES[r] : "Other";
+}
+
+static inline const char* getLevelUpGiftName(u16 id) {
+    if (id == 0xFFFF) return "None";
+    static const char* GIFTS[28] = {
+        "Wii U", "3DS", "Study Kit", "Cell Phone", "Mirror", "Maracas",
+        "Acoustic Guitar", "Treadmill", "Yoga Mat", "Punching Bag",
+        "Frying Pan", "Sewing Machine", "Camera", "Laptop", "Dog Voucher",
+        "Cat Voucher", "Swing", "Slide", "Sandcastle Kit", "Bubble Blower",
+        "Hula Hoop", "Soccer Ball", "Baseball", "Tennis Racket",
+        "Golf Club", "Skateboard", "Comic Book", "Novel"
+    };
+    return (id < 28) ? GIFTS[id] : "Gift";
 }
 
 static inline void readMiiEntry(SafeFile* file, SaveRegion reg, int slot, MiiEntry& m) {
@@ -91,11 +114,15 @@ static inline void readMiiEntry(SafeFile* file, SaveRegion reg, int slot, MiiEnt
     utf16le_to_utf8_buf(m.lastName, sizeof(m.lastName), last16, 16);
     if (m.nickname[0] == '\0') snprintf(m.nickname, sizeof(m.nickname), "Mii #%d", slot + 1);
 
-    u8 rawGenderByte = 0, rawFavColorByte = 0;
-    file->read(getMiiFieldOffset(reg, slot, 0x1C88, 0x1C58), &rawGenderByte, 1, &br);
-    file->read(getMiiFieldOffset(reg, slot, 0x1C89, 0x1C59), &rawFavColorByte, 1, &br);
-    m.gender = rawGenderByte & 0x01;
-    m.favColor = (rawFavColorByte >> 2) & 0x0F;
+    // CFSD bitfields at 0x1C88 & 0x1C89 (US/EU/KR) / 0x1C58 & 0x1C59 (JP)
+    u8 b88 = 0, b89 = 0;
+    file->read(getMiiFieldOffset(reg, slot, 0x1C88, 0x1C58), &b88, 1, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x1C89, 0x1C59), &b89, 1, &br);
+    m.gender     = b88 & 0x01;
+    m.birthMonth = (b88 >> 1) & 0x0F;
+    m.birthDay   = ((b88 >> 5) & 0x07) | ((b89 & 0x03) << 3);
+    m.favColor   = (b89 >> 2) & 0x0F;
+
     file->read(getMiiFieldOffset(reg, slot, 0x1F2D, 0x1E2D), &m.relationToYou, 1, &br);
     file->read(getMiiFieldOffset(reg, slot, 0x22AE, 0x21AE), &m.grownUpFlag, 1, &br);
 
@@ -109,11 +136,9 @@ static inline void readMiiEntry(SafeFile* file, SaveRegion reg, int slot, MiiEnt
     file->read(getMiiFieldOffset(reg, slot, 0x22A8, 0x21A8), &m.apartmentRoom, 1, &br);
     file->read(getMiiFieldOffset(reg, slot, 0x22A9, 0x21A9), &m.miiHome, 1, &br);
 
-    file->read(getMiiFieldOffset(reg, slot, 0x1D14, 0x1CE4), &m.equippedClothes, 2, &br);
-    file->read(getMiiFieldOffset(reg, slot, 0x1D16, 0x1CE6), &m.equippedClothesColor, 1, &br);
-    file->read(getMiiFieldOffset(reg, slot, 0x1D18, 0x1CE8), &m.equippedHat, 2, &br);
-    file->read(getMiiFieldOffset(reg, slot, 0x1D1A, 0x1CEA), &m.equippedHatColor, 1, &br);
-    file->read(getMiiFieldOffset(reg, slot, 0x1D1C, 0x1CEC), &m.equippedInterior, 2, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x1D42, 0x1D12), &m.equippedClothes, 2, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x1D44, 0x1D14), &m.equippedHat, 2, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x1F20, 0x1E20), &m.equippedInterior, 2, &br);
     for (int g = 0; g < 8; g++) {
         file->read(getMiiFieldOffset(reg, slot, 0x2258 + g * 2, 0x2158 + g * 2), &m.levelUpGifts[g], 2, &br);
     }
@@ -121,11 +146,13 @@ static inline void readMiiEntry(SafeFile* file, SaveRegion reg, int slot, MiiEnt
     file->read(getMiiFieldOffset(reg, slot, 0x1D4A, 0x1D1A), m.voice, 6, &br);
     file->read(getMiiFieldOffset(reg, slot, 0x1D50, 0x1D20), m.personality, 5, &br);
 
-    file->read(getMiiFieldOffset(reg, slot, 0x2278, 0x2178), &m.favFood1, 2, &br);
-    file->read(getMiiFieldOffset(reg, slot, 0x227A, 0x217A), &m.favFood2, 2, &br);
-    file->read(getMiiFieldOffset(reg, slot, 0x227C, 0x217C), &m.superFavFood, 2, &br);
-    file->read(getMiiFieldOffset(reg, slot, 0x22A0, 0x21A0), &m.worstFood, 2, &br);
-    file->read(getMiiFieldOffset(reg, slot, 0x22A2, 0x21A2), &m.worstEverFood, 2, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x2298, 0x2198), &m.superFavFood, 2, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x229A, 0x219A), &m.worstEverFood, 2, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x229C, 0x219C), &m.allTimeFavFood, 2, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x229E, 0x219E), &m.worstFood, 2, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x22A0, 0x21A0), &m.favFood1, 2, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x22A2, 0x21A2), &m.favFood2, 2, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x22A4, 0x21A4), &m.favFood3, 2, &br);
 }
 
 static inline void scanRegisteredMiis(SafeFile* file, SaveRegion reg, std::vector<MiiEntry>& outList) {
@@ -149,6 +176,8 @@ static inline void writeMiiEntry(SafeFile* file, SafeArchive* archive, SaveRegio
     u32 bw = 0;
 
     u8 gender = (in.gender > 1) ? 1 : in.gender;
+    u8 bMonth = (in.birthMonth > 12) ? 12 : in.birthMonth;
+    u8 bDay   = (in.birthDay > 31) ? 31 : in.birthDay;
     u8 favCol = (in.favColor > 11) ? 11 : in.favColor;
     u8 relYou = (in.relationToYou > 11) ? 0 : in.relationToYou;
     u8 grown  = (in.grownUpFlag == 2) ? 2 : 1;
@@ -171,15 +200,16 @@ static inline void writeMiiEntry(SafeFile* file, SafeArchive* archive, SaveRegio
     file->write(getMiiFieldOffset(reg, slot, 0x1CD0, 0x1CA0), first16, 32, &bw);
     file->write(getMiiFieldOffset(reg, slot, 0x1CF0, 0x1CC0), last16, 32, &bw);
 
-    u8 rawGenderByte = 0, rawFavColorByte = 0;
+    // Read-modify-write CFSD bitfields (preserving bits 7..6 of 0x1C89)
+    u8 b88 = 0, b89 = 0;
     u32 br = 0;
-    file->read(getMiiFieldOffset(reg, slot, 0x1C88, 0x1C58), &rawGenderByte, 1, &br);
-    file->read(getMiiFieldOffset(reg, slot, 0x1C89, 0x1C59), &rawFavColorByte, 1, &br);
-    rawGenderByte = (rawGenderByte & (u8)~0x01) | (gender & 0x01);
-    rawFavColorByte = (rawFavColorByte & (u8)~0x3C) | ((favCol & 0x0F) << 2);
+    file->read(getMiiFieldOffset(reg, slot, 0x1C88, 0x1C58), &b88, 1, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x1C89, 0x1C59), &b89, 1, &br);
+    b88 = (u8)((gender & 0x01) | ((bMonth & 0x0F) << 1) | ((bDay & 0x07) << 5));
+    b89 = (u8)((b89 & 0xC0) | ((bDay >> 3) & 0x03) | ((favCol & 0x0F) << 2));
 
-    file->write(getMiiFieldOffset(reg, slot, 0x1C88, 0x1C58), &rawGenderByte, 1, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x1C89, 0x1C59), &rawFavColorByte, 1, &bw);
+    file->write(getMiiFieldOffset(reg, slot, 0x1C88, 0x1C58), &b88, 1, &bw);
+    file->write(getMiiFieldOffset(reg, slot, 0x1C89, 0x1C59), &b89, 1, &bw);
     file->write(getMiiFieldOffset(reg, slot, 0x1F2D, 0x1E2D), &relYou, 1, &bw);
     file->write(getMiiFieldOffset(reg, slot, 0x22AE, 0x21AE), &grown, 1, &bw);
 
@@ -193,11 +223,9 @@ static inline void writeMiiEntry(SafeFile* file, SafeArchive* archive, SaveRegio
     file->write(getMiiFieldOffset(reg, slot, 0x22A8, 0x21A8), &room, 1, &bw);
     file->write(getMiiFieldOffset(reg, slot, 0x22A9, 0x21A9), &in.miiHome, 1, &bw);
 
-    file->write(getMiiFieldOffset(reg, slot, 0x1D14, 0x1CE4), &in.equippedClothes, 2, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x1D16, 0x1CE6), &in.equippedClothesColor, 1, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x1D18, 0x1CE8), &in.equippedHat, 2, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x1D1A, 0x1CEA), &in.equippedHatColor, 1, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x1D1C, 0x1CEC), &in.equippedInterior, 2, &bw);
+    file->write(getMiiFieldOffset(reg, slot, 0x1D42, 0x1D12), &in.equippedClothes, 2, &bw);
+    file->write(getMiiFieldOffset(reg, slot, 0x1D44, 0x1D14), &in.equippedHat, 2, &bw);
+    file->write(getMiiFieldOffset(reg, slot, 0x1F20, 0x1E20), &in.equippedInterior, 2, &bw);
     for (int g = 0; g < 8; g++) {
         file->write(getMiiFieldOffset(reg, slot, 0x2258 + g * 2, 0x2158 + g * 2), &in.levelUpGifts[g], 2, &bw);
     }
@@ -209,11 +237,13 @@ static inline void writeMiiEntry(SafeFile* file, SafeArchive* archive, SaveRegio
     file->write(getMiiFieldOffset(reg, slot, 0x1D4A, 0x1D1A), voiceClamped, 6, &bw);
     file->write(getMiiFieldOffset(reg, slot, 0x1D50, 0x1D20), persClamped, 5, &bw);
 
-    file->write(getMiiFieldOffset(reg, slot, 0x2278, 0x2178), &in.favFood1, 2, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x227A, 0x217A), &in.favFood2, 2, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x227C, 0x217C), &in.superFavFood, 2, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x22A0, 0x21A0), &in.worstFood, 2, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x22A2, 0x21A2), &in.worstEverFood, 2, &bw);
+    file->write(getMiiFieldOffset(reg, slot, 0x2298, 0x2198), &in.superFavFood, 2, &bw);
+    file->write(getMiiFieldOffset(reg, slot, 0x229A, 0x219A), &in.worstEverFood, 2, &bw);
+    file->write(getMiiFieldOffset(reg, slot, 0x229C, 0x219C), &in.allTimeFavFood, 2, &bw);
+    file->write(getMiiFieldOffset(reg, slot, 0x229E, 0x219E), &in.worstFood, 2, &bw);
+    file->write(getMiiFieldOffset(reg, slot, 0x22A0, 0x21A0), &in.favFood1, 2, &bw);
+    file->write(getMiiFieldOffset(reg, slot, 0x22A2, 0x21A2), &in.favFood2, 2, &bw);
+    file->write(getMiiFieldOffset(reg, slot, 0x22A4, 0x21A4), &in.favFood3, 2, &bw);
 
     if (archive && archive->get() != 0) archive->commit();
 }

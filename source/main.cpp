@@ -32,6 +32,77 @@ void capitalizeString(char* str) {
     }
 }
 
+void formatFoodName(u16 id, char* out, size_t outSz) {
+    if (id == 0xFFFF) {
+        snprintf(out, outSz, "None");
+        return;
+    }
+    if ((int)id < FOOD_COUNT) {
+        strncpy(out, FOOD_NAMES[id], outSz - 1);
+        out[outSz - 1] = '\0';
+        capitalizeString(out);
+    } else {
+        snprintf(out, outSz, "Special Food #%u", (unsigned)id);
+    }
+}
+
+void formatClothesName(u16 id, char* out, size_t outSz) {
+    if (id == 0xFFFF) {
+        snprintf(out, outSz, "None");
+        return;
+    }
+    int slot = (int)(id / 8);
+    int col = (int)(id % 8) + 1;
+    if (slot >= 0 && slot < 447 && (990 + slot) < CLOTHES_COUNT) {
+        char base[40];
+        strncpy(base, CLOTHES_NAMES[990 + slot], sizeof(base) - 1);
+        base[sizeof(base) - 1] = '\0';
+        capitalizeString(base);
+        snprintf(out, outSz, "%.22s (C%d)", base, col);
+    } else {
+        snprintf(out, outSz, "Clothes #%u", (unsigned)id);
+    }
+}
+
+void formatHatName(u16 id, char* out, size_t outSz) {
+    if (id == 0xFFFF) {
+        snprintf(out, outSz, "None");
+        return;
+    }
+    int slot = (int)(id / 8);
+    int col = (int)(id % 8) + 1;
+    if (slot >= 0 && slot < 219 && (2606 + slot) < CLOTHES_COUNT) {
+        char base[40];
+        strncpy(base, CLOTHES_NAMES[2606 + slot], sizeof(base) - 1);
+        base[sizeof(base) - 1] = '\0';
+        capitalizeString(base);
+        snprintf(out, outSz, "%.22s (C%d)", base, col);
+    } else {
+        snprintf(out, outSz, "Hat #%u", (unsigned)id);
+    }
+}
+
+void formatInteriorName(u16 id, char* out, size_t outSz) {
+    if (id == 0xFFFF) {
+        snprintf(out, outSz, "None");
+        return;
+    }
+    if ((int)id < INTERIORS_COUNT) {
+        strncpy(out, INTERIORS_NAMES[id], outSz - 1);
+        out[outSz - 1] = '\0';
+        capitalizeString(out);
+    } else {
+        snprintf(out, outSz, "Interior #%u", (unsigned)id);
+    }
+}
+
+int exportColorBitToIndex(u8 bit) {
+    for (int i = 0; i < 8; i++) {
+        if (bit == (u8)(1u << i)) return i;
+    }
+    return 0;
+}
+
 bool editStringWithKeyboard(char* outBuf, int maxChars, const char* hintText) {
     SwkbdState swkbd;
     swkbdInit(&swkbd, SWKBD_TYPE_NORMAL, 2, maxChars);
@@ -1000,7 +1071,7 @@ int main(int argc, char** argv) {
             }
         }
         else if (currentState == STATE_MII_PROFILE_EDIT) {
-            adjustListNav(kDown, 7);
+            adjustListNav(kDown, 9);
             if (kDown & KEY_B) {
                 writeMiiEntry(file.get(), archive.get(), currentRegion, activeMii);
                 currentState = STATE_MII_SUBMENU; cursorIndex = 1; scrollOffset = 0;
@@ -1013,6 +1084,8 @@ int main(int argc, char** argv) {
                 else if (cursorIndex == 4) activeMii.favColor = (activeMii.favColor + 1) % 12;
                 else if (cursorIndex == 5) activeMii.grownUpFlag = (activeMii.grownUpFlag == 2) ? 1 : 2;
                 else if (cursorIndex == 6) activeMii.relationToYou = (activeMii.relationToYou + 1) % 12;
+                else if (cursorIndex == 7) activeMii.birthMonth = (u8)((activeMii.birthMonth + 1) % 13);
+                else if (cursorIndex == 8) activeMii.birthDay = (u8)((activeMii.birthDay + 1) % 32);
             }
             if ((kDown & KEY_LEFT) || (kDown & KEY_RIGHT)) {
                 int d = (kDown & KEY_RIGHT) ? 1 : -1;
@@ -1020,6 +1093,8 @@ int main(int argc, char** argv) {
                 else if (cursorIndex == 4) activeMii.favColor = (u8)((activeMii.favColor + 12 + d) % 12);
                 else if (cursorIndex == 5) activeMii.grownUpFlag = (activeMii.grownUpFlag == 2) ? 1 : 2;
                 else if (cursorIndex == 6) activeMii.relationToYou = (u8)((activeMii.relationToYou + 12 + d) % 12);
+                else if (cursorIndex == 7) activeMii.birthMonth = (u8)((activeMii.birthMonth + 13 + d) % 13);
+                else if (cursorIndex == 8) activeMii.birthDay = (u8)((activeMii.birthDay + 32 + d) % 32);
             }
         }
         else if (currentState == STATE_MII_VOICE_PERS) {
@@ -1041,21 +1116,49 @@ int main(int argc, char** argv) {
             }
         }
         else if (currentState == STATE_MII_GIFTS_FOODS) {
-            adjustListNav(kDown, 8);
+            adjustListNav(kDown, 18); // 3 Equipped + 7 Foods + 8 Level-Up Gifts
             if (kDown & KEY_B) {
                 writeMiiEntry(file.get(), archive.get(), currentRegion, activeMii);
                 currentState = STATE_MII_SUBMENU; cursorIndex = 3; scrollOffset = 0;
             }
+            auto stepOptionalU16 = [](u16& val, int delta, int maxId, bool allowNone) {
+                if (val == 0xFFFF) {
+                    if (delta > 0) val = 0;
+                    else if (delta < 0) val = (u16)maxId;
+                    return;
+                }
+                int nv = (int)val + delta;
+                if (nv < 0) val = allowNone ? 0xFFFF : 0;
+                else if (nv > maxId) val = allowNone ? 0xFFFF : (u16)maxId;
+                else val = (u16)nv;
+            };
+            if (kDown & KEY_Y) {
+                if (cursorIndex == 1) activeMii.equippedHat = 0xFFFF;
+                else if (cursorIndex == 3) activeMii.superFavFood = 0xFFFF;
+                else if (cursorIndex == 4) activeMii.allTimeFavFood = 0xFFFF;
+                else if (cursorIndex == 5) activeMii.favFood1 = 0xFFFF;
+                else if (cursorIndex == 6) activeMii.favFood2 = 0xFFFF;
+                else if (cursorIndex == 7) activeMii.favFood3 = 0xFFFF;
+                else if (cursorIndex == 8) activeMii.worstFood = 0xFFFF;
+                else if (cursorIndex == 9) activeMii.worstEverFood = 0xFFFF;
+                else if (cursorIndex >= 10 && cursorIndex < 18) activeMii.levelUpGifts[cursorIndex - 10] = 0xFFFF;
+            }
             int d = (kDown & KEY_RIGHT) ? 1 : ((kDown & KEY_LEFT) ? -1 : ((kDown & KEY_A) ? 10 : 0));
             if (d != 0) {
-                if (cursorIndex == 0) activeMii.equippedClothes = (u16)((int)activeMii.equippedClothes + d);
-                else if (cursorIndex == 1) activeMii.equippedHat = (u16)((int)activeMii.equippedHat + d);
-                else if (cursorIndex == 2) activeMii.equippedInterior = (u16)((int)activeMii.equippedInterior + d);
-                else if (cursorIndex == 3) activeMii.favFood1 = (u16)((int)activeMii.favFood1 + d);
-                else if (cursorIndex == 4) activeMii.favFood2 = (u16)((int)activeMii.favFood2 + d);
-                else if (cursorIndex == 5) activeMii.superFavFood = (u16)((int)activeMii.superFavFood + d);
-                else if (cursorIndex == 6) activeMii.worstFood = (u16)((int)activeMii.worstFood + d);
-                else if (cursorIndex == 7) activeMii.worstEverFood = (u16)((int)activeMii.worstEverFood + d);
+                if (cursorIndex == 0) stepOptionalU16(activeMii.equippedClothes, d, 447 * 8 - 1, false);
+                else if (cursorIndex == 1) stepOptionalU16(activeMii.equippedHat, d, 219 * 8 - 1, true);
+                else if (cursorIndex == 2) stepOptionalU16(activeMii.equippedInterior, d, INTERIORS_COUNT - 1, false);
+                else if (cursorIndex == 3) stepOptionalU16(activeMii.superFavFood, d, FOOD_COUNT - 1, true);
+                else if (cursorIndex == 4) stepOptionalU16(activeMii.allTimeFavFood, d, FOOD_COUNT - 1, true);
+                else if (cursorIndex == 5) stepOptionalU16(activeMii.favFood1, d, FOOD_COUNT - 1, true);
+                else if (cursorIndex == 6) stepOptionalU16(activeMii.favFood2, d, FOOD_COUNT - 1, true);
+                else if (cursorIndex == 7) stepOptionalU16(activeMii.favFood3, d, FOOD_COUNT - 1, true);
+                else if (cursorIndex == 8) stepOptionalU16(activeMii.worstFood, d, FOOD_COUNT - 1, true);
+                else if (cursorIndex == 9) stepOptionalU16(activeMii.worstEverFood, d, FOOD_COUNT - 1, true);
+                else if (cursorIndex >= 10 && cursorIndex < 18) {
+                    int gd = (kDown & KEY_RIGHT) ? 1 : ((kDown & KEY_LEFT) ? -1 : 1);
+                    stepOptionalU16(activeMii.levelUpGifts[cursorIndex - 10], gd, 27, true);
+                }
             }
         }
         // ── Relationship Editor (#44) ────────────────────────────────
@@ -1133,9 +1236,9 @@ int main(int argc, char** argv) {
                 }
             }
         }
-        // ── Island Info & Settings (#46) ─────────────────────────────
+        // ── Island Info & Settings (#46, #53) ────────────────────────
         else if (currentState == STATE_ISLAND_INFO) {
-            adjustListNav(kDown, 11);
+            adjustListNav(kDown, 12);
             if (kDown & KEY_B) {
                 writeIslandInfo(file.get(), archive.get(), currentRegion, activeIslandInfo);
                 readIslandMetadata(file.get(), currentRegion, &currentMoney, islandNameUTF8);
@@ -1160,6 +1263,12 @@ int main(int argc, char** argv) {
                 else if (cursorIndex == 8) activeIslandInfo.streetPassActive = activeIslandInfo.streetPassActive ? 0 : 1;
                 else if (cursorIndex == 9) activeIslandInfo.babiesAllowed = activeIslandInfo.babiesAllowed ? 0 : 1;
                 else if (cursorIndex == 10) activeIslandInfo.spotPassActive = activeIslandInfo.spotPassActive ? 0 : 1;
+                else if (cursorIndex == 11) {
+                    int cIdx = exportColorBitToIndex(activeIslandInfo.exportColorBit);
+                    int step = (d > 0) ? 1 : -1;
+                    cIdx = (cIdx + 8 + step) % 8;
+                    activeIslandInfo.exportColorBit = (u8)(1u << cIdx);
+                }
             }
         }
         // ── Active Interactions (#47) ────────────────────────────────
@@ -1404,8 +1513,8 @@ int main(int argc, char** argv) {
             snprintf(bottomHint, sizeof(bottomHint), "[Left/Right] +/-1  [A] +10  [X] Max  [Y] Reset\n[B] Save & Back");
         } else if (currentState == STATE_MII_PROFILE_EDIT) {
             snprintf(headerTitle, sizeof(headerTitle), "%s — Profile", activeMii.nickname);
-            const char* labels[7] = {"Nickname", "First Name", "Last Name", "Gender", "Favorite Color", "Adult / Kid", "Relation to You"};
-            for (int i = 0; i < 7; i++) {
+            const char* labels[9] = {"Nickname", "First Name", "Last Name", "Gender", "Favorite Color", "Adult / Kid", "Relation to You", "Birth Month", "Birth Day"};
+            for (int i = 0; i < 9; i++) {
                 UIRow r; snprintf(r.label, sizeof(r.label), "%s", labels[i]); r.iconIdx = SPR_COUNT;
                 if (i == 0) snprintf(r.value, sizeof(r.value), "%.24s", activeMii.nickname);
                 else if (i == 1) snprintf(r.value, sizeof(r.value), "%.24s", activeMii.firstName);
@@ -1413,7 +1522,10 @@ int main(int argc, char** argv) {
                 else if (i == 3) snprintf(r.value, sizeof(r.value), "%s", activeMii.gender == 0 ? "Male" : "Female");
                 else if (i == 4) snprintf(r.value, sizeof(r.value), "%s", getFavColorName(activeMii.favColor));
                 else if (i == 5) snprintf(r.value, sizeof(r.value), "%s", activeMii.grownUpFlag == 2 ? "Kid" : "Adult");
-                else snprintf(r.value, sizeof(r.value), "%s", getRelationName(activeMii.relationToYou));
+                else if (i == 6) snprintf(r.value, sizeof(r.value), "%s", getRelationName(activeMii.relationToYou));
+                else if (i == 7) snprintf(r.value, sizeof(r.value), "%s", getMonthName(activeMii.birthMonth));
+                else if (activeMii.birthDay == 0) snprintf(r.value, sizeof(r.value), "Unset");
+                else snprintf(r.value, sizeof(r.value), "%u", (unsigned)activeMii.birthDay);
                 rows.push_back(r);
             }
             snprintf(bottomHint, sizeof(bottomHint), "[A] Edit Text / Toggle   [Left/Right] Cycle\n[B] Save & Back");
@@ -1428,15 +1540,34 @@ int main(int argc, char** argv) {
             }
             snprintf(bottomHint, sizeof(bottomHint), "[Left/Right] Adjust   [A] +5   [B] Save & Back");
         } else if (currentState == STATE_MII_GIFTS_FOODS) {
-            snprintf(headerTitle, sizeof(headerTitle), "%s — Equipped & Foods", activeMii.nickname);
-            const char* labels[8] = {"Equipped Clothes ID", "Equipped Hat ID", "Equipped Interior ID", "All-Time Fav #1", "All-Time Fav #2", "Super All-Time Fav", "Worst Food", "Worst Ever Food"};
-            u16 vals[8] = {activeMii.equippedClothes, activeMii.equippedHat, activeMii.equippedInterior, activeMii.favFood1, activeMii.favFood2, activeMii.superFavFood, activeMii.worstFood, activeMii.worstEverFood};
-            for (int i = 0; i < 8; i++) {
-                UIRow r; snprintf(r.label, sizeof(r.label), "%s", labels[i]);
-                snprintf(r.value, sizeof(r.value), "#%u", vals[i]); r.iconIdx = SPR_COUNT;
+            snprintf(headerTitle, sizeof(headerTitle), "%s — Equipped, Foods & Gifts", activeMii.nickname);
+            const char* labels[10] = {
+                "Equipped Clothes", "Equipped Hat", "Equipped Interior",
+                "Super All-Time Fav", "All-Time Fav", "Favorite Food #1",
+                "Favorite Food #2", "Favorite Food #3", "Worst Food", "Worst Ever Food"
+            };
+            for (int i = 0; i < 10; i++) {
+                UIRow r; snprintf(r.label, sizeof(r.label), "%s", labels[i]); r.iconIdx = SPR_COUNT;
+                if (i == 0) formatClothesName(activeMii.equippedClothes, r.value, sizeof(r.value));
+                else if (i == 1) formatHatName(activeMii.equippedHat, r.value, sizeof(r.value));
+                else if (i == 2) formatInteriorName(activeMii.equippedInterior, r.value, sizeof(r.value));
+                else if (i == 3) formatFoodName(activeMii.superFavFood, r.value, sizeof(r.value));
+                else if (i == 4) formatFoodName(activeMii.allTimeFavFood, r.value, sizeof(r.value));
+                else if (i == 5) formatFoodName(activeMii.favFood1, r.value, sizeof(r.value));
+                else if (i == 6) formatFoodName(activeMii.favFood2, r.value, sizeof(r.value));
+                else if (i == 7) formatFoodName(activeMii.favFood3, r.value, sizeof(r.value));
+                else if (i == 8) formatFoodName(activeMii.worstFood, r.value, sizeof(r.value));
+                else formatFoodName(activeMii.worstEverFood, r.value, sizeof(r.value));
                 rows.push_back(r);
             }
-            snprintf(bottomHint, sizeof(bottomHint), "[Left/Right] +/-1   [A] +10   [B] Save & Back");
+            for (int g = 0; g < 8; g++) {
+                UIRow rg;
+                snprintf(rg.label, sizeof(rg.label), "Level-Up Gift #%d", g + 1);
+                snprintf(rg.value, sizeof(rg.value), "%s", getLevelUpGiftName(activeMii.levelUpGifts[g]));
+                rg.iconIdx = SPR_COUNT;
+                rows.push_back(rg);
+            }
+            snprintf(bottomHint, sizeof(bottomHint), "[Left/Right] +/-1   [A] +10   [Y] Clear (None)\n[B] Save & Back");
         } else if (currentState == STATE_REL_MII_A || currentState == STATE_REL_MII_B) {
             headerIcon = SPR_ICON_RELATIONSHIPS;
             snprintf(headerTitle, sizeof(headerTitle),
@@ -1445,17 +1576,22 @@ int main(int argc, char** argv) {
             for (size_t i = 0; i < miiList.size(); i++) {
                 UIRow r;
                 snprintf(r.label, sizeof(r.label), "%s", miiList[i].nickname);
+                r.iconIdx = SPR_COUNT;
                 if (currentState == STATE_REL_MII_B) {
-                    if ((int)i == relMiiAIdx) snprintf(r.value, sizeof(r.value), "(Self)");
-                    else {
+                    if ((int)i == relMiiAIdx) {
+                        snprintf(r.value, sizeof(r.value), "(Self)");
+                    } else {
                         RelationshipPair rp;
                         readRelationshipPair(file.get(), currentRegion, miiList[relMiiAIdx].slotIndex, miiList[i].slotIndex, rp);
-                        snprintf(r.value, sizeof(r.value), "%s", getRelationshipTypeName(rp.relType));
+                        snprintf(r.value, sizeof(r.value), "%s (%u/%u)", getRelationshipTypeName(rp.relType),
+                                 (unsigned)rp.feelingAtoB, (unsigned)rp.feelingBtoA);
+                        if (isRelationshipConflict(rp.relType)) r.iconIdx = SPR_BADGE_CONFLICT_STORM;
+                        else if (isRelationshipRomantic(rp.relType)) r.iconIdx = SPR_BADGE_HEART_PINK;
+                        else if (rp.relType == 1 || rp.relType == 12) r.iconIdx = SPR_BADGE_FRIEND_GREEN;
                     }
                 } else {
                     snprintf(r.value, sizeof(r.value), "Lv.%u", miiList[i].level);
                 }
-                r.iconIdx = SPR_COUNT;
                 rows.push_back(r);
             }
             snprintf(bottomHint, sizeof(bottomHint),
@@ -1491,8 +1627,8 @@ int main(int argc, char** argv) {
         } else if (currentState == STATE_ISLAND_INFO) {
             headerIcon = SPR_ICON_ISLAND;
             snprintf(headerTitle, sizeof(headerTitle), "Island Info & Settings");
-            const char* labels[11] = {"Island Name", "Island Pronunciation", "Problems Solved", "Weddings", "Children Born", "StreetPass Encounters", "Travelers Received", "Travelers Sent", "StreetPass Active", "Babies Allowed", "SpotPass Active"};
-            for (int i = 0; i < 11; i++) {
+            const char* labels[12] = {"Island Name", "Island Pronunciation", "Problems Solved", "Weddings", "Children Born", "StreetPass Encounters", "Travelers Received", "Travelers Sent", "StreetPass Active", "Babies Allowed", "SpotPass Active", "Export Outfit Color"};
+            for (int i = 0; i < 12; i++) {
                 UIRow r; snprintf(r.label, sizeof(r.label), "%s", labels[i]); r.iconIdx = SPR_COUNT;
                 if (i == 0) snprintf(r.value, sizeof(r.value), "%s", activeIslandInfo.islandName);
                 else if (i == 1) snprintf(r.value, sizeof(r.value), "%s", activeIslandInfo.islandPronun);
@@ -1504,7 +1640,8 @@ int main(int argc, char** argv) {
                 else if (i == 7) snprintf(r.value, sizeof(r.value), "%u", activeIslandInfo.travelersSent);
                 else if (i == 8) snprintf(r.value, sizeof(r.value), "%s", activeIslandInfo.streetPassActive ? "ON" : "OFF");
                 else if (i == 9) snprintf(r.value, sizeof(r.value), "%s", activeIslandInfo.babiesAllowed ? "ON" : "OFF");
-                else snprintf(r.value, sizeof(r.value), "%s", activeIslandInfo.spotPassActive ? "ON" : "OFF");
+                else if (i == 10) snprintf(r.value, sizeof(r.value), "%s", activeIslandInfo.spotPassActive ? "ON" : "OFF");
+                else snprintf(r.value, sizeof(r.value), "Color %d", exportColorBitToIndex(activeIslandInfo.exportColorBit) + 1);
                 rows.push_back(r);
             }
             snprintf(bottomHint, sizeof(bottomHint), "[A] Edit Name / +10   [Left/Right] Adjust\n[B] Save & Back");
@@ -1634,7 +1771,10 @@ int main(int argc, char** argv) {
 
                 float labelX = 28.0f;
                 if (rows[idx].iconIdx < SPR_COUNT) {
-                    drawSprite(spriteSheet, rows[idx].iconIdx, 24.0f, rowY + 1.0f, 0.5f, 0.5f);
+                    bool isMicroBadge = (rows[idx].iconIdx >= SPR_BADGE_HEART_PINK &&
+                                         rows[idx].iconIdx <= SPR_BADGE_CONFLICT_STORM);
+                    float iconScale = isMicroBadge ? 1.0f : 0.5f;
+                    drawSprite(spriteSheet, rows[idx].iconIdx, 24.0f, rowY + 1.0f, iconScale, iconScale);
                     labelX = 44.0f;
                 }
 
