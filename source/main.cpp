@@ -674,7 +674,7 @@ static inline int getBottomButtons(MenuState state, bool fileOpen, TouchButton o
     if (state == STATE_MII_STATUS_EDIT || state == STATE_MII_PROFILE_EDIT ||
         state == STATE_MII_VOICE_PERS  || state == STATE_MII_GIFTS_FOODS  ||
         state == STATE_REL_EDIT        || state == STATE_ISLAND_CONFIG    ||
-        state == STATE_ISLAND_INFO     || state == STATE_INTERACTION_EDIT ||
+        state == STATE_ISLAND_INFO     || state == STATE_INTERACTIONS_EDIT ||
         state == STATE_CONCERT_EDIT) {
         const float w = 64.0f * 0.85f;
         const float h = 36.0f * 0.85f;
