@@ -335,6 +335,56 @@ static inline void clearTravelerSlot(SafeFile* file, SafeArchive* archive, SaveR
     if (archive && archive->get() != 0) archive->commit();
 }
 
+struct TravelerData {
+    int slot;
+    char nickname[32];
+    char message[64];
+    u8 level;       // 1..99
+    u8 experience;  // 0..99
+    u8 onIsland;    // 0/1
+    bool present;
+};
+
+static inline void readTravelerData(SafeFile* file, SaveRegion reg, int slot, TravelerData& out) {
+    memset(&out, 0, sizeof(out));
+    out.slot = slot;
+    if (!file || !file->isOpen() || slot < 0 || slot >= MAX_TRAVELERS) return;
+    u64 base = getTravelerBase(reg, slot);
+    u32 br = 0;
+    u16 nick16[11] = {0};
+    u16 msg16[25] = {0};
+    file->read(base + 0x00, nick16, 20, &br);
+    file->read(base + 0xD9, &out.onIsland, 1, &br);
+    file->read(base + 0xFC, msg16, 48, &br);
+    file->read(base + 0x23C, &out.experience, 1, &br);
+    file->read(base + 0x23D, &out.level, 1, &br);
+    utf16le_to_utf8_buf(out.nickname, sizeof(out.nickname), nick16, 10);
+    utf16le_to_utf8_buf(out.message, sizeof(out.message), msg16, 24);
+    out.present = (out.nickname[0] != '\0');
+    if (!out.present) snprintf(out.nickname, sizeof(out.nickname), "Traveler %d", slot + 1);
+    if (out.level < 1) out.level = 1;
+    if (out.level > 99) out.level = 99;
+    if (out.experience > 99) out.experience = 99;
+}
+
+static inline void writeTravelerData(SafeFile* file, SafeArchive* archive, SaveRegion reg, const TravelerData& in) {
+    if (!file || !file->isOpen() || in.slot < 0 || in.slot >= MAX_TRAVELERS) return;
+    u64 base = getTravelerBase(reg, in.slot);
+    u32 bw = 0;
+    u16 nick16[10] = {0};
+    u16 msg16[24] = {0};
+    utf8_to_utf16le_buf(nick16, 10, in.nickname);
+    utf8_to_utf16le_buf(msg16, 24, in.message);
+    u8 lv = (in.level < 1) ? 1 : ((in.level > 99) ? 99 : in.level);
+    u8 xp = (in.experience > 99) ? 99 : in.experience;
+    file->write(base + 0x00, nick16, 20, &bw);
+    file->write(base + 0xD9, &in.onIsland, 1, &bw);
+    file->write(base + 0xFC, msg16, 48, &bw);
+    file->write(base + 0x23C, &xp, 1, &bw);
+    file->write(base + 0x23D, &lv, 1, &bw);
+    if (archive && archive->get() != 0) archive->commit();
+}
+
 struct ConcertSongData {
     char title[64];
     u8 genre; // 0..7

@@ -105,6 +105,8 @@ public:
 
 static bool g_backupCreated = false;
 static char g_backupStatus[64] = "Standby (Before 1st Edit)";
+typedef void (*BackupProgressFn)();
+static BackupProgressFn g_onBeforeBackup = nullptr;
 
 class SafeFile {
 private:
@@ -114,6 +116,7 @@ private:
     void ensureBackupBeforeWrite() {
         if (g_backupCreated) return;
         g_backupCreated = true;
+        if (g_onBeforeBackup) g_onBeforeBackup();
 
 #ifndef HOST_TEST
         mkdir("sdmc:/3ds", 0777);

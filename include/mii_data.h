@@ -28,6 +28,9 @@ struct MiiEntry {
     u8 favColor;        // 0..11 (0x1C89 bits 5..2)
     u8 relationToYou;   // 0..11
     u8 grownUpFlag;     // 1 = Adult (can marry), 2 = Kid
+    char catchphrase[48]; // 0x1D20 US/EU/KR, 0x1CF0 JP (16 UTF-16 chars)
+    u8 sharing;         // 0/1 (0x1CA0 bit 0 US/EU/KR, 0x1C70 bit 0 JP)
+    u8 copying;         // 0/1 (0x1C71 bit 0 US/EU/KR, 0x1C41 bit 0 JP)
     // Status
     u8 level;           // 1..99
     u8 experience;      // 0..99
@@ -126,6 +129,16 @@ static inline void readMiiEntry(SafeFile* file, SaveRegion reg, int slot, MiiEnt
     file->read(getMiiFieldOffset(reg, slot, 0x1F2D, 0x1E2D), &m.relationToYou, 1, &br);
     file->read(getMiiFieldOffset(reg, slot, 0x22AE, 0x21AE), &m.grownUpFlag, 1, &br);
 
+    u8 rawSharing = 0, rawCopying = 0;
+    file->read(getMiiFieldOffset(reg, slot, 0x1CA0, 0x1C70), &rawSharing, 1, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x1C71, 0x1C41), &rawCopying, 1, &br);
+    m.sharing = rawSharing & 0x01;
+    m.copying = rawCopying & 0x01;
+
+    u16 catch16[17] = {0};
+    file->read(getMiiFieldOffset(reg, slot, 0x1D20, 0x1CF0), catch16, 32, &br);
+    utf16le_to_utf8_buf(m.catchphrase, sizeof(m.catchphrase), catch16, 16);
+
     file->read(getMiiFieldOffset(reg, slot, 0x1F22, 0x1E22), &m.experience, 1, &br);
     file->read(getMiiFieldOffset(reg, slot, 0x1F23, 0x1E23), &m.level, 1, &br);
     file->read(getMiiFieldOffset(reg, slot, 0x1F24, 0x1E24), &m.pampered, 4, &br);
@@ -168,6 +181,58 @@ static inline void scanRegisteredMiis(SafeFile* file, SaveRegion reg, std::vecto
             outList.push_back(entry);
         }
     }
+}
+
+static inline u64 getMiiTableBase(SaveRegion reg) {
+    return (reg == REGION_JP) ? 0x1C40 : 0x1C70;
+}
+
+static inline u16 computeCfsdCrc16Xmodem(const u8* data, size_t len) {
+    u16 crc = 0x0000;
+    for (size_t idx = 0; idx < len; idx++) {
+        u8 b = data[idx];
+        for (int i = 0; i < 8; i++) {
+            bool bit = ((b >> (7 - i)) & 1) != 0;
+            bool c15 = ((crc >> 15) & 1) != 0;
+            crc = (u16)(crc << 1);
+            if (c15 ^ bit) crc ^= 0x1021;
+        }
+    }
+    return crc;
+}
+
+static inline bool updateMiiCfsdChecksum(SafeFile* file, SaveRegion reg, int slot) {
+    if (!file || !file->isOpen() || slot < 0 || slot >= MAX_MIIS) return false;
+    u64 slotBase = getMiiTableBase(reg) + (u64)slot * (u64)getMiiStride(reg);
+    u8 cfsd[0x5E] = {0};
+    u32 br = 0;
+    if (R_FAILED(file->read(slotBase, cfsd, 0x5E, &br)) || br != 0x5E) return false;
+    u16 crc = computeCfsdCrc16Xmodem(cfsd, 0x5E);
+    u8 stored[2] = {0, 0};
+    file->read(slotBase + 0x5E, stored, 2, &br);
+    u16 oldCrc = (u16)(((u16)stored[0] << 8) | (u16)stored[1]);
+    if (oldCrc == crc) return false;
+    u8 newCrc[2] = { (u8)((crc >> 8) & 0xFF), (u8)(crc & 0xFF) };
+    u32 bw = 0;
+    file->write(slotBase + 0x5E, newCrc, 2, &bw);
+    return true;
+}
+
+static inline int verifyAndRepairAllMiiChecksums(SafeFile* file, SafeArchive* archive, SaveRegion reg, int* outChecked = nullptr) {
+    if (!file || !file->isOpen()) return 0;
+    int checked = 0, fixed = 0;
+    for (int i = 0; i < MAX_MIIS; i++) {
+        u8 regFlag = 0;
+        u32 br = 0;
+        file->read(getMiiFieldOffset(reg, i, 0x22C8, 0x21C8), &regFlag, 1, &br);
+        if (regFlag == 1) {
+            checked++;
+            if (updateMiiCfsdChecksum(file, reg, i)) fixed++;
+        }
+    }
+    if (outChecked) *outChecked = checked;
+    if (fixed > 0 && archive && archive->get() != 0) archive->commit();
+    return fixed;
 }
 
 static inline void writeMiiEntry(SafeFile* file, SafeArchive* archive, SaveRegion reg, const MiiEntry& in) {
@@ -213,6 +278,18 @@ static inline void writeMiiEntry(SafeFile* file, SafeArchive* archive, SaveRegio
     file->write(getMiiFieldOffset(reg, slot, 0x1F2D, 0x1E2D), &relYou, 1, &bw);
     file->write(getMiiFieldOffset(reg, slot, 0x22AE, 0x21AE), &grown, 1, &bw);
 
+    u8 rawSharing = 0, rawCopying = 0;
+    file->read(getMiiFieldOffset(reg, slot, 0x1CA0, 0x1C70), &rawSharing, 1, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x1C71, 0x1C41), &rawCopying, 1, &br);
+    rawSharing = (u8)((rawSharing & 0xFE) | (in.sharing & 0x01));
+    rawCopying = (u8)((rawCopying & 0xFE) | (in.copying & 0x01));
+    file->write(getMiiFieldOffset(reg, slot, 0x1CA0, 0x1C70), &rawSharing, 1, &bw);
+    file->write(getMiiFieldOffset(reg, slot, 0x1C71, 0x1C41), &rawCopying, 1, &bw);
+
+    u16 catch16[16] = {0};
+    utf8_to_utf16le_buf(catch16, 16, in.catchphrase);
+    file->write(getMiiFieldOffset(reg, slot, 0x1D20, 0x1CF0), catch16, 32, &bw);
+
     file->write(getMiiFieldOffset(reg, slot, 0x1F22, 0x1E22), &xp, 1, &bw);
     file->write(getMiiFieldOffset(reg, slot, 0x1F23, 0x1E23), &lv, 1, &bw);
     file->write(getMiiFieldOffset(reg, slot, 0x1F24, 0x1E24), &pamp, 4, &bw);
@@ -245,11 +322,9 @@ static inline void writeMiiEntry(SafeFile* file, SafeArchive* archive, SaveRegio
     file->write(getMiiFieldOffset(reg, slot, 0x22A2, 0x21A2), &in.favFood2, 2, &bw);
     file->write(getMiiFieldOffset(reg, slot, 0x22A4, 0x21A4), &in.favFood3, 2, &bw);
 
-    if (archive && archive->get() != 0) archive->commit();
-}
+    updateMiiCfsdChecksum(file, reg, slot);
 
-static inline u64 getMiiTableBase(SaveRegion reg) {
-    return (reg == REGION_JP) ? 0x1C40 : 0x1C70;
+    if (archive && archive->get() != 0) archive->commit();
 }
 
 static inline bool exportMiiTlmii(SafeFile* file, SaveRegion reg, int slot, const char* path) {

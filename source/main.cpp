@@ -152,9 +152,10 @@ enum MenuState {
     STATE_INTERACTIONS_EDIT,
     // Quick Extras & Save Repair (#48)
     STATE_EXTRAS_MENU,
-    // Travelers & Concert Hall (#49)
+    // Travelers & Concert Hall (#49, #56)
     STATE_TRAVELERS_CONCERT_MENU,
     STATE_TRAVELERS_LIST,
+    STATE_TRAVELER_EDIT,
     STATE_CONCERT_SONGS,
     STATE_CONCERT_EDIT
 };
@@ -675,7 +676,7 @@ static inline int getBottomButtons(MenuState state, bool fileOpen, TouchButton o
         state == STATE_MII_VOICE_PERS  || state == STATE_MII_GIFTS_FOODS  ||
         state == STATE_REL_EDIT        || state == STATE_ISLAND_CONFIG    ||
         state == STATE_ISLAND_INFO     || state == STATE_INTERACTIONS_EDIT ||
-        state == STATE_CONCERT_EDIT) {
+        state == STATE_TRAVELER_EDIT   || state == STATE_CONCERT_EDIT) {
         const float w = 64.0f * 0.85f;
         const float h = 36.0f * 0.85f;
         outBtns[0] = {10.0f,  189.0f, w, h, 0.85f, KEY_DUP,    "Prev"};
@@ -694,6 +695,46 @@ static inline int getBottomButtons(MenuState state, bool fileOpen, TouchButton o
     return 4;
 }
 
+// ── Busy / Loading Screen Helper (#55) ───────────────────────────────
+
+static C3D_RenderTarget* g_busyTopTarget = nullptr;
+static C3D_RenderTarget* g_busyBotTarget = nullptr;
+static C2D_TextBuf g_busyTopBuf = nullptr;
+static C2D_TextBuf g_busyBotBuf = nullptr;
+static C2D_SpriteSheet g_busySheet = nullptr;
+
+static void renderBusyFrame(const char* title, const char* subtitle) {
+    if (!g_busyTopTarget || !g_busyBotTarget || !g_busyTopBuf || !g_busyBotBuf) return;
+    const u32 colSkyBlue  = C2D_Color32(168, 224, 248, 255);
+    const u32 colCream    = C2D_Color32(252, 248, 232, 255);
+    const u32 colTextDark = C2D_Color32(48, 36, 28, 255);
+    const u32 colShadowLt = C2D_Color32(255, 255, 255, 190);
+    const u32 colAccent   = C2D_Color32(180, 72, 42, 255);
+
+    C2D_TextBufClear(g_busyTopBuf);
+    C2D_TextBufClear(g_busyBotBuf);
+    C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
+
+    C2D_TargetClear(g_busyTopTarget, colSkyBlue);
+    C2D_SceneBegin(g_busyTopTarget);
+    drawSprite(g_busySheet, SPR_TOP_BG, 0.0f, 0.0f);
+    drawSprite(g_busySheet, SPR_HEADER_BAR, 8.0f, 4.0f);
+    drawSprite(g_busySheet, SPR_FOOTER_CARD, 52.0f, 72.0f);
+    drawTextShadowed(g_busyTopBuf, title ? title : "Working...", 16.0f, 9.0f, 0.46f, 0.46f, colTextDark, colShadowLt);
+    drawTextShadowed(g_busyTopBuf, subtitle ? subtitle : "Please wait...", 70.0f, 106.0f, 0.44f, 0.44f, colAccent, colShadowLt);
+
+    C2D_TargetClear(g_busyBotTarget, colCream);
+    C2D_SceneBegin(g_busyBotTarget);
+    drawSprite(g_busySheet, SPR_BOTTOM_BG, 0.0f, 0.0f);
+    drawSprite(g_busySheet, SPR_BANNER_LOGO, 32.0f, 88.0f);
+
+    C3D_FrameEnd(0);
+}
+
+static void onBeforeBackupCallback() {
+    renderBusyFrame("Creating Backup...", "Backing up savedataArc.txt to SD card.\nPlease wait...");
+}
+
 // ── Main ─────────────────────────────────────────────────────────────
 
 int main(int argc, char** argv) {
@@ -705,8 +746,16 @@ int main(int argc, char** argv) {
     C2D_TextBuf bottomBuf = C2D_TextBufNew(4096);
     C2D_SpriteSheet spriteSheet = C2D_SpriteSheetLoad("romfs:/gfx/sprites.t3x");
 
+    g_busyTopTarget = topTarget;
+    g_busyBotTarget = bottomTarget;
+    g_busyTopBuf = topBuf;
+    g_busyBotBuf = bottomBuf;
+    g_busySheet = spriteSheet;
+    g_onBeforeBackup = onBeforeBackupCallback;
+
     g_backupCreated = false;
     snprintf(g_backupStatus, sizeof(g_backupStatus), "Standby (Before 1st Edit)");
+    renderBusyFrame("Loading Save Data...", "Scanning Cartridge & SD card...");
 
     struct TitleCandidate {
         FS_MediaType media;
@@ -796,6 +845,8 @@ int main(int argc, char** argv) {
     MiiInteractionData activeInteraction;
     ConcertSongData activeSong;
     int activeSongIdx = 0;
+    TravelerData activeTraveler;
+    int activeTravelerIdx = 0;
     char statusToast[96] = "";
     bool confirmDeleteMii = false;
 
@@ -845,6 +896,7 @@ int main(int argc, char** argv) {
                     currentState = (MenuState)(STATE_CATEGORY_FOOD + (cursorIndex - 1));
                     cursorIndex = 0; scrollOffset = 0;
                 } else if (cursorIndex == 7) {
+                    renderBusyFrame("Unlocking Specials...", "Unlocking SpotPass & StreetPass items...");
                     unlockSpecialItems(file.get(), archive.get(), &categories[1], 99);
                     unlockSpecialItems(file.get(), archive.get(), &categories[2], 99);
                     unlockSpecialFoods(file.get(), archive.get(), 99);
@@ -1001,25 +1053,52 @@ int main(int argc, char** argv) {
                 cursorIndex = savedItemCursor;
             }
         }
-        // ── Mii Editor Suite (#11) ───────────────────────────────────
+        // ── Mii Editor Suite (#11, #52, #55) ─────────────────────────
         else if (currentState == STATE_MII_SELECT) {
             adjustListNav(kDown, (int)miiList.size());
             if (kDown & KEY_B) { currentState = STATE_MAIN_MENU; cursorIndex = 8; scrollOffset = 0; }
             if ((kDown & KEY_X) && !miiList.empty()) {
+                renderBusyFrame("Updating All Miis...", "Setting Lv.99 & Max Pocket Money...");
                 maxAllMiisLevelAndMoney(file.get(), archive.get(), currentRegion);
                 scanRegisteredMiis(file.get(), currentRegion, miiList);
                 snprintf(statusToast, sizeof(statusToast), "All Miis set to Lv.99 & Max Pocket!");
             }
+            if ((kDown & KEY_L) && !miiList.empty()) {
+                renderBusyFrame("Exporting .tlamii...", "Writing all 100 Mii slots to SD...");
+                if (exportAllMiisTlamii(file.get(), currentRegion, "sdmc:/3ds/tlse/miis/all_miis.tlamii")) {
+                    snprintf(statusToast, sizeof(statusToast), "Exported all_miis.tlamii!");
+                } else {
+                    snprintf(statusToast, sizeof(statusToast), "Export all_miis.tlamii failed!");
+                }
+            }
+            if (kDown & KEY_R) {
+                renderBusyFrame("Importing .tlamii...", "Restoring all 100 Mii slots from SD...");
+                if (importAllMiisTlamii(file.get(), archive.get(), currentRegion, "sdmc:/3ds/tlse/miis/all_miis.tlamii")) {
+                    scanRegisteredMiis(file.get(), currentRegion, miiList);
+                    if (miiList.empty()) { cursorIndex = 0; scrollOffset = 0; }
+                    else if (cursorIndex >= (int)miiList.size()) {
+                        cursorIndex = (int)miiList.size() - 1;
+                        if (scrollOffset > cursorIndex) scrollOffset = cursorIndex;
+                    }
+                    snprintf(statusToast, sizeof(statusToast), "Imported all_miis.tlamii (%zu Miis)!", miiList.size());
+                } else {
+                    snprintf(statusToast, sizeof(statusToast), "Import failed (missing/wrong region)!");
+                }
+            }
             if ((kDown & KEY_A) && !miiList.empty()) {
                 selectedMiiListIdx = cursorIndex;
                 activeMii = miiList[selectedMiiListIdx];
+                confirmDeleteMii = false;
                 currentState = STATE_MII_SUBMENU;
                 cursorIndex = 0; scrollOffset = 0;
             }
         }
         else if (currentState == STATE_MII_SUBMENU) {
-            adjustListNav(kDown, 6);
+            int prevCursor = cursorIndex;
+            adjustListNav(kDown, 8);
+            if (cursorIndex != prevCursor) confirmDeleteMii = false;
             if (kDown & KEY_B) {
+                confirmDeleteMii = false;
                 scanRegisteredMiis(file.get(), currentRegion, miiList);
                 currentState = STATE_MII_SELECT;
                 cursorIndex = selectedMiiListIdx; scrollOffset = 0;
@@ -1041,6 +1120,35 @@ int main(int argc, char** argv) {
                     if (importMiiTlmii(file.get(), archive.get(), currentRegion, activeMii.slotIndex, path)) {
                         readMiiEntry(file.get(), currentRegion, activeMii.slotIndex, activeMii);
                         snprintf(statusToast, sizeof(statusToast), "Imported mii_%03d.tlmii!", activeMii.slotIndex);
+                    }
+                } else if (cursorIndex == 6) {
+                    renderBusyFrame("Cloning Mii...", "Copying Mii to first empty slot...");
+                    int newSlot = cloneMiiSlot(file.get(), archive.get(), currentRegion, activeMii.slotIndex);
+                    if (newSlot >= 0) {
+                        scanRegisteredMiis(file.get(), currentRegion, miiList);
+                        snprintf(statusToast, sizeof(statusToast), "Cloned to Slot %d!", newSlot + 1);
+                    } else {
+                        snprintf(statusToast, sizeof(statusToast), "Island full (100/100 Miis)!");
+                    }
+                } else if (cursorIndex == 7) {
+                    if (miiList.size() <= 1) {
+                        snprintf(statusToast, sizeof(statusToast), "Cannot delete the last Mii!");
+                    } else if (!confirmDeleteMii) {
+                        confirmDeleteMii = true;
+                        snprintf(statusToast, sizeof(statusToast), "Press [A] again to confirm Delete!");
+                    } else {
+                        confirmDeleteMii = false;
+                        int delSlot = activeMii.slotIndex;
+                        renderBusyFrame("Deleting Mii...", "Wiping slot & clearing relationships...");
+                        if (deleteMiiSlot(file.get(), archive.get(), currentRegion, delSlot)) {
+                            clearMiiRelationships(file.get(), archive.get(), currentRegion, delSlot);
+                            scanRegisteredMiis(file.get(), currentRegion, miiList);
+                            currentState = STATE_MII_SELECT;
+                            cursorIndex = (selectedMiiListIdx >= (int)miiList.size()) ? (int)miiList.size() - 1 : selectedMiiListIdx;
+                            if (cursorIndex < 0) cursorIndex = 0;
+                            scrollOffset = 0;
+                            snprintf(statusToast, sizeof(statusToast), "Deleted Mii (Slot %d)!", delSlot + 1);
+                        }
                     }
                 }
             }
@@ -1113,7 +1221,7 @@ int main(int argc, char** argv) {
             }
         }
         else if (currentState == STATE_MII_PROFILE_EDIT) {
-            adjustListNav(kDown, 9);
+            adjustListNav(kDown, 12);
             if (kDown & KEY_B) {
                 writeMiiEntry(file.get(), archive.get(), currentRegion, activeMii);
                 currentState = STATE_MII_SUBMENU; cursorIndex = 1; scrollOffset = 0;
@@ -1128,6 +1236,9 @@ int main(int argc, char** argv) {
                 else if (cursorIndex == 6) activeMii.relationToYou = (activeMii.relationToYou + 1) % 12;
                 else if (cursorIndex == 7) activeMii.birthMonth = (u8)((activeMii.birthMonth + 1) % 13);
                 else if (cursorIndex == 8) activeMii.birthDay = (u8)((activeMii.birthDay + 1) % 32);
+                else if (cursorIndex == 9) editStringWithKeyboard(activeMii.catchphrase, 16, "Mii Catchphrase");
+                else if (cursorIndex == 10) activeMii.sharing = activeMii.sharing ? 0 : 1;
+                else if (cursorIndex == 11) activeMii.copying = activeMii.copying ? 0 : 1;
             }
             if ((kDown & KEY_LEFT) || (kDown & KEY_RIGHT)) {
                 int d = (kDown & KEY_RIGHT) ? 1 : -1;
@@ -1137,6 +1248,8 @@ int main(int argc, char** argv) {
                 else if (cursorIndex == 6) activeMii.relationToYou = (u8)((activeMii.relationToYou + 12 + d) % 12);
                 else if (cursorIndex == 7) activeMii.birthMonth = (u8)((activeMii.birthMonth + 13 + d) % 13);
                 else if (cursorIndex == 8) activeMii.birthDay = (u8)((activeMii.birthDay + 32 + d) % 32);
+                else if (cursorIndex == 10) activeMii.sharing = activeMii.sharing ? 0 : 1;
+                else if (cursorIndex == 11) activeMii.copying = activeMii.copying ? 0 : 1;
             }
         }
         else if (currentState == STATE_MII_VOICE_PERS) {
@@ -1208,10 +1321,12 @@ int main(int argc, char** argv) {
             adjustListNav(kDown, (int)miiList.size());
             if (kDown & KEY_B) { currentState = STATE_MAIN_MENU; cursorIndex = 9; scrollOffset = 0; }
             if ((kDown & KEY_Y) && !miiList.empty()) {
+                renderBusyFrame("Resolving Fights...", "Scanning & clearing relationship fights...");
                 int r = resolveAllRelationshipFights(file.get(), archive.get(), currentRegion);
                 snprintf(statusToast, sizeof(statusToast), "Resolved %d fights!", r);
             }
             if ((kDown & KEY_X) && !miiList.empty()) {
+                renderBusyFrame("Updating Feelings...", "Maxing all acquainted feelings to 200...");
                 maxAllAcquaintedFeelings(file.get(), archive.get(), currentRegion);
                 snprintf(statusToast, sizeof(statusToast), "Maxed all acquainted feelings (200)!");
             }
@@ -1344,11 +1459,12 @@ int main(int argc, char** argv) {
                 else if (cursorIndex == 3) activeInteraction.target2 = (u16)((int)activeInteraction.target2 + (d ? d : 1));
             }
         }
-        // ── Quick Extras & Save Repair (#48) ─────────────────────────
+        // ── Quick Extras & Save Repair (#48, #57) ────────────────────
         else if (currentState == STATE_EXTRAS_MENU) {
-            adjustListNav(kDown, 7);
+            adjustListNav(kDown, 8);
             if (kDown & KEY_B) { currentState = STATE_MAIN_MENU; cursorIndex = 13; scrollOffset = 0; }
             if ((kDown & KEY_A) && fileOpenSuccess) {
+                renderBusyFrame("Applying Extras...", "Updating save data. Please wait...");
                 if (cursorIndex == 0) {
                     int n = setAllMiisStomach(file.get(), archive.get(), currentRegion, 100);
                     snprintf(statusToast, sizeof(statusToast), "Filled %d Miis' stomachs (100%%)!", n);
@@ -1370,10 +1486,14 @@ int main(int argc, char** argv) {
                 } else if (cursorIndex == 6) {
                     int n = repairSaveInteractions(file.get(), archive.get(), currentRegion);
                     snprintf(statusToast, sizeof(statusToast), "Repaired %d malformed interactions!", n);
+                } else if (cursorIndex == 7) {
+                    int checked = 0;
+                    int fixed = verifyAndRepairAllMiiChecksums(file.get(), archive.get(), currentRegion, &checked);
+                    snprintf(statusToast, sizeof(statusToast), "Checked %d Miis: fixed %d CRCs!", checked, fixed);
                 }
             }
         }
-        // ── Travelers & Concert Hall (#49) ───────────────────────────
+        // ── Travelers & Concert Hall (#49, #56) ──────────────────────
         else if (currentState == STATE_TRAVELERS_CONCERT_MENU) {
             adjustListNav(kDown, 2);
             if (kDown & KEY_B) { currentState = STATE_MAIN_MENU; cursorIndex = 0; scrollOffset = 0; }
@@ -1385,9 +1505,35 @@ int main(int argc, char** argv) {
         else if (currentState == STATE_TRAVELERS_LIST) {
             adjustListNav(kDown, MAX_TRAVELERS);
             if (kDown & KEY_B) { currentState = STATE_TRAVELERS_CONCERT_MENU; cursorIndex = 0; scrollOffset = 0; }
+            if ((kDown & KEY_A) && fileOpenSuccess) {
+                activeTravelerIdx = cursorIndex;
+                readTravelerData(file.get(), currentRegion, activeTravelerIdx, activeTraveler);
+                currentState = STATE_TRAVELER_EDIT;
+                cursorIndex = 0; scrollOffset = 0;
+            }
             if ((kDown & KEY_X) && fileOpenSuccess) {
                 clearTravelerSlot(file.get(), archive.get(), currentRegion, cursorIndex);
                 snprintf(statusToast, sizeof(statusToast), "Cleared Traveler slot %d!", cursorIndex + 1);
+            }
+        }
+        else if (currentState == STATE_TRAVELER_EDIT) {
+            adjustListNav(kDown, 5); // Nickname, Message, On Island, Level, EXP
+            if (kDown & KEY_B) {
+                writeTravelerData(file.get(), archive.get(), currentRegion, activeTraveler);
+                currentState = STATE_TRAVELERS_LIST; cursorIndex = activeTravelerIdx; scrollOffset = 0;
+            }
+            if (kDown & KEY_A) {
+                if (cursorIndex == 0) editStringWithKeyboard(activeTraveler.nickname, 10, "Traveler Nickname");
+                else if (cursorIndex == 1) editStringWithKeyboard(activeTraveler.message, 24, "Traveler Message");
+                else if (cursorIndex == 2) activeTraveler.onIsland = activeTraveler.onIsland ? 0 : 1;
+                else if (cursorIndex == 3) { int v = (int)activeTraveler.level + 5; activeTraveler.level = (u8)((v > 99) ? 99 : v); }
+                else if (cursorIndex == 4) { int v = (int)activeTraveler.experience + 10; activeTraveler.experience = (u8)((v > 99) ? 99 : v); }
+            }
+            if ((kDown & KEY_LEFT) || (kDown & KEY_RIGHT)) {
+                int d = (kDown & KEY_RIGHT) ? 1 : -1;
+                if (cursorIndex == 2) activeTraveler.onIsland = activeTraveler.onIsland ? 0 : 1;
+                else if (cursorIndex == 3) { int v = (int)activeTraveler.level + d; activeTraveler.level = (u8)((v < 1) ? 1 : (v > 99 ? 99 : v)); }
+                else if (cursorIndex == 4) { int v = (int)activeTraveler.experience + d; activeTraveler.experience = (u8)((v < 0) ? 0 : (v > 99 ? 99 : v)); }
             }
         }
         else if (currentState == STATE_CONCERT_SONGS) {
@@ -1560,8 +1706,8 @@ int main(int argc, char** argv) {
             snprintf(bottomHint, sizeof(bottomHint), "[Left/Right] +/-1  [A] +10  [X] Max  [Y] Reset\n[B] Save & Back");
         } else if (currentState == STATE_MII_PROFILE_EDIT) {
             snprintf(headerTitle, sizeof(headerTitle), "%s — Profile", activeMii.nickname);
-            const char* labels[9] = {"Nickname", "First Name", "Last Name", "Gender", "Favorite Color", "Adult / Kid", "Relation to You", "Birth Month", "Birth Day"};
-            for (int i = 0; i < 9; i++) {
+            const char* labels[12] = {"Nickname", "First Name", "Last Name", "Gender", "Favorite Color", "Adult / Kid", "Relation to You", "Birth Month", "Birth Day", "Catchphrase", "Sharing Allowed", "Copying Allowed"};
+            for (int i = 0; i < 12; i++) {
                 UIRow r; snprintf(r.label, sizeof(r.label), "%s", labels[i]); r.iconIdx = SPR_COUNT;
                 if (i == 0) snprintf(r.value, sizeof(r.value), "%.24s", activeMii.nickname);
                 else if (i == 1) snprintf(r.value, sizeof(r.value), "%.24s", activeMii.firstName);
@@ -1571,8 +1717,13 @@ int main(int argc, char** argv) {
                 else if (i == 5) snprintf(r.value, sizeof(r.value), "%s", activeMii.grownUpFlag == 2 ? "Kid" : "Adult");
                 else if (i == 6) snprintf(r.value, sizeof(r.value), "%s", getRelationName(activeMii.relationToYou));
                 else if (i == 7) snprintf(r.value, sizeof(r.value), "%s", getMonthName(activeMii.birthMonth));
-                else if (activeMii.birthDay == 0) snprintf(r.value, sizeof(r.value), "Unset");
-                else snprintf(r.value, sizeof(r.value), "%u", (unsigned)activeMii.birthDay);
+                else if (i == 8) {
+                    if (activeMii.birthDay == 0) snprintf(r.value, sizeof(r.value), "Unset");
+                    else snprintf(r.value, sizeof(r.value), "%u", (unsigned)activeMii.birthDay);
+                }
+                else if (i == 9) snprintf(r.value, sizeof(r.value), "%.20s", activeMii.catchphrase[0] ? activeMii.catchphrase : "(None)");
+                else if (i == 10) snprintf(r.value, sizeof(r.value), "%s", activeMii.sharing ? "ON" : "OFF");
+                else snprintf(r.value, sizeof(r.value), "%s", activeMii.copying ? "ON" : "OFF");
                 rows.push_back(r);
             }
             snprintf(bottomHint, sizeof(bottomHint), "[A] Edit Text / Toggle   [Left/Right] Cycle\n[B] Save & Back");
@@ -1715,8 +1866,8 @@ int main(int argc, char** argv) {
         } else if (currentState == STATE_EXTRAS_MENU) {
             headerIcon = SPR_ICON_EXTRAS;
             snprintf(headerTitle, sizeof(headerTitle), "Quick Extras & Save Repair");
-            const char* labels[7] = {"Fill All Miis' Stomachs (100%)", "Empty All Miis' Stomachs (0%)", "Max All Miis (Lv.99 + Pocket)", "Resolve All Relationship Fights", "Reset Apartment Room Layout", "Reset Mii News Flashes", "Repair Malformed Interactions"};
-            for (int i = 0; i < 7; i++) {
+            const char* labels[8] = {"Fill All Miis' Stomachs (100%)", "Empty All Miis' Stomachs (0%)", "Max All Miis (Lv.99 + Pocket)", "Resolve All Relationship Fights", "Reset Apartment Room Layout", "Reset Mii News Flashes", "Repair Malformed Interactions", "Verify & Repair Mii Checksums"};
+            for (int i = 0; i < 8; i++) {
                 UIRow r; snprintf(r.label, sizeof(r.label), "%s", labels[i]); snprintf(r.value, sizeof(r.value), "Run"); r.iconIdx = SPR_COUNT;
                 rows.push_back(r);
             }
@@ -1738,7 +1889,21 @@ int main(int argc, char** argv) {
                 snprintf(r.value, sizeof(r.value), ts.present ? "Active" : "Empty"); r.iconIdx = SPR_COUNT;
                 rows.push_back(r);
             }
-            snprintf(bottomHint, sizeof(bottomHint), "[X] Clear Selected Traveler   [B] Back\n%s", statusToast);
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Edit Traveler   [X] Clear   [B] Back\n%s", statusToast);
+        } else if (currentState == STATE_TRAVELER_EDIT) {
+            headerIcon = SPR_ICON_CONCERT;
+            snprintf(headerTitle, sizeof(headerTitle), "Traveler #%d — %s", activeTravelerIdx + 1, activeTraveler.nickname);
+            const char* labels[5] = {"Nickname", "Message", "On Island", "Level", "Experience"};
+            for (int i = 0; i < 5; i++) {
+                UIRow r; snprintf(r.label, sizeof(r.label), "%s", labels[i]); r.iconIdx = SPR_COUNT;
+                if (i == 0) snprintf(r.value, sizeof(r.value), "%.24s", activeTraveler.nickname);
+                else if (i == 1) snprintf(r.value, sizeof(r.value), "%.20s", activeTraveler.message[0] ? activeTraveler.message : "(None)");
+                else if (i == 2) snprintf(r.value, sizeof(r.value), "%s", activeTraveler.onIsland ? "YES" : "NO");
+                else if (i == 3) snprintf(r.value, sizeof(r.value), "%u", (unsigned)activeTraveler.level);
+                else snprintf(r.value, sizeof(r.value), "%u%%", (unsigned)activeTraveler.experience);
+                rows.push_back(r);
+            }
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Edit / +Step   [Left/Right] Adjust\n[B] Save & Back");
         } else if (currentState == STATE_CONCERT_SONGS) {
             headerIcon = SPR_ICON_CONCERT;
             snprintf(headerTitle, sizeof(headerTitle), "Concert Hall Songs");
