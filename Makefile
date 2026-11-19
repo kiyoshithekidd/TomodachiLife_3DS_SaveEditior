@@ -123,7 +123,7 @@ ifneq ($(ROMFS),)
 	export _3DSXFLAGS += --romfs=$(CURDIR)/$(ROMFS)
 endif
 
-.PHONY: all clean
+.PHONY: all clean generate cia
 
 #---------------------------------------------------------------------------------
 all: $(BUILD) $(GFXBUILD) $(DEPSDIR) $(ROMFS_T3XFILES) $(T3XHFILES)
@@ -143,9 +143,18 @@ $(DEPSDIR):
 endif
 
 #---------------------------------------------------------------------------------
+generate: $(BUILD)
+	@bannertool makesmdh -s "$(APP_TITLE)" -l "$(APP_DESCRIPTION)" -p "$(APP_AUTHOR)" -i "$(ICON)" -o "$(BUILD)/icon.bin"
+	@bannertool makebanner -i "gfx/banner.png" -a "gfx/banner.wav" -o "$(BUILD)/banner.bnr"
+
+cia: all generate
+	@$(DEVKITARM)/bin/arm-none-eabi-strip -o $(BUILD)/$(TARGET)-strip.elf $(TARGET).elf
+	@makerom -f cia -o $(TARGET).cia -elf $(BUILD)/$(TARGET)-strip.elf -rsf app.rsf -icon $(BUILD)/icon.bin -banner $(BUILD)/banner.bnr -exefslogo -target t
+
+#---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf $(GFXBUILD)
+	@rm -fr $(BUILD) $(TARGET).3dsx $(TARGET).cia $(OUTPUT).smdh $(TARGET).elf $(GFXBUILD)
 
 #---------------------------------------------------------------------------------
 $(GFXBUILD)/%.t3x	$(BUILD)/%.h	:	%.t3s

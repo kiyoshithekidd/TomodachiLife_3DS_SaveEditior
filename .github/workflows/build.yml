@@ -1,4 +1,4 @@
-name: Build 3DSX
+name: Build 3DSX & CIA
 
 on:
   push:
@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build:
-    name: Build TomodachiLife_3DS_SaveEditor.3dsx
+    name: Build .3dsx & .cia
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkitarm:latest
@@ -21,20 +21,38 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Clean & Build .3dsx
+      - name: Install bannertool & makerom
+        run: |
+          if ! command -v bannertool >/dev/null 2>&1; then
+            curl -fsSL https://github.com/carstene1ns/3ds-bannertool/releases/download/1.2.3/bannertool-1.2.3-linux.tar.gz -o /tmp/bannertool.tar.gz
+            tar -xzf /tmp/bannertool.tar.gz -C /tmp
+            find /tmp -name bannertool -type f -exec install -m 0755 {} /usr/local/bin/bannertool \;
+          fi
+          if ! command -v makerom >/dev/null 2>&1; then
+            curl -fsSL https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-ubuntu_x86_64.zip -o /tmp/makerom.zip
+            unzip -o /tmp/makerom.zip -d /tmp/makerom
+            find /tmp/makerom -name makerom -type f -exec install -m 0755 {} /usr/local/bin/makerom \;
+          fi
+
+      - name: Clean & Build .3dsx + .cia
         run: |
           make clean
           make -j$(nproc --all)
-          ls -lh TomodachiLife_3DS_SaveEditor.3dsx
+          make cia
+          ls -lh TomodachiLife_3DS_SaveEditor.3dsx TomodachiLife_3DS_SaveEditor.cia
 
-      - name: Upload .3dsx Artifact
+      - name: Upload .3dsx & .cia Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: TomodachiLife_3DS_SaveEditor
-          path: TomodachiLife_3DS_SaveEditor.3dsx
+          path: |
+            TomodachiLife_3DS_SaveEditor.3dsx
+            TomodachiLife_3DS_SaveEditor.cia
 
-      - name: Upload .3dsx to GitHub Release on Tag
+      - name: Upload .3dsx & .cia to GitHub Release on Tag
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: TomodachiLife_3DS_SaveEditor.3dsx
+          files: |
+            TomodachiLife_3DS_SaveEditor.3dsx
+            TomodachiLife_3DS_SaveEditor.cia
