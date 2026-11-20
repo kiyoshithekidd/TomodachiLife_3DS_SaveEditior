@@ -83,7 +83,7 @@ If you have a modded 3DS and want to use the editor:
 | Treasures | `0x1902` | `0x1931` | 1 |
 | Special Foods | `0x19E2` (`+0x19E4..0x1A12`) | `0x1A14` (`+0x1A16..0x1A44`) | 1 (48 slots) |
 | Mii Table (`CFSD` + Status) | `0x1C70` (`0x660` stride) | `0x1C70` (`0x660` stride) | `0x660` per slot (CRC16-XMODEM at `+0x5E`) |
-| Money | `0x1E4BC0` | `0x1E4BC8` | 4 (`u32`, max `99999999` cents) |
+| Money | `0x1E4BB8` | `0x1E4BC8` | 4 (`u32`, max `99999999` cents) |
 | Island Name | `0x1E4BCC` | `0x1E4BD4` | 22 (UTF-16LE) |
 
 *(JP and KR region offsets are also automatically detected when probing JP `0x00035100` or KR `0x0008C500` saves.)*
