@@ -420,8 +420,17 @@ static const u16 SPOTPASS_HATS_SLOTS_EU[] = {
     0, 5, 18, 48, 55, 63, 70, 71, 79, 90, 92, 95, 96, 97, 108, 112, 137, 140, 176
 };
 
+static inline void formatItemQty(char* out, size_t outSize, u8 rawQty) {
+    if (rawQty == 0xFF) snprintf(out, outSize, "N/A");
+    else if (rawQty == 0xFD) snprintf(out, outSize, "Locked");
+    else if (rawQty == 0xFE) snprintf(out, outSize, "x0");
+    else if (rawQty > 99) snprintf(out, outSize, "x99+");
+    else snprintf(out, outSize, "x%u", (unsigned)rawQty);
+}
+
 void unlockCategoryAll(SafeFile* file, SafeArchive* archive, CategoryInfo* cat, u8 val) {
     if (!file || !file->isOpen() || !cat || cat->maxItems <= 0) return;
+    if (val > 99) val = 99;
 
     u32 totalBytes = (u32)(cat->maxItems * cat->bytesPerItem);
     std::vector<u8> buf(totalBytes, 0xFD);
@@ -452,6 +461,7 @@ void unlockCategoryAll(SafeFile* file, SafeArchive* archive, CategoryInfo* cat, 
 
 void unlockSpecialItems(SafeFile* file, SafeArchive* archive, CategoryInfo* cat, u8 val) {
     if (!file || !file->isOpen() || !cat || !cat->hasSpecialLogic) return;
+    if (val > 99) val = 99;
 
     const u16* slots = NULL;
     int slotCount = 0;
@@ -877,6 +887,20 @@ int main(int argc, char** argv) {
         hidScanInput();
         u32 kDown = hidKeysDown();
 
+        if (kDown & KEY_TOUCH) {
+            touchPosition touch;
+            hidTouchRead(&touch);
+            TouchButton tBtns[5];
+            int tBtnCount = getBottomButtons(currentState, fileOpenSuccess, tBtns);
+            for (int i = 0; i < tBtnCount; i++) {
+                if (touch.px >= (u16)tBtns[i].x && touch.px < (u16)(tBtns[i].x + tBtns[i].w) &&
+                    touch.py >= (u16)tBtns[i].y && touch.py < (u16)(tBtns[i].y + tBtns[i].h)) {
+                    kDown |= tBtns[i].keyMask;
+                    break;
+                }
+            }
+        }
+
         if (kDown & KEY_START) {
             if (fileOpenSuccess && archive != nullptr && archive->get() != 0) {
                 archive->commit();
@@ -976,6 +1000,7 @@ int main(int argc, char** argv) {
                 cursorIndex = menuIdx; scrollOffset = 0;
             }
             if ((kDown & KEY_X) && fileOpenSuccess) {
+                renderBusyFrame("Unlocking Category...", "Writing valid items (x99)...");
                 unlockCategoryAll(file.get(), archive.get(), cat, 99);
                 snprintf(statusToast, sizeof(statusToast), "Unlocked all %s!", getTitleForState(currentState));
             }
@@ -1025,7 +1050,7 @@ int main(int argc, char** argv) {
                 CategoryInfo* cat = getCategoryForState(previousCategory);
                 int originalIdx = cat->filteredIndices[savedItemCursor];
                 u32 bytesWritten = 0;
-                u8 val = (u8)quantityToGive;
+                u8 val = (quantityToGive < 1) ? 1 : ((quantityToGive > 99) ? 99 : (u8)quantityToGive);
                 if (cat->hasColors) {
                     int validColors = getValidColorCount(cat, originalIdx);
                     u32 slotOffset = cat->saveBase + (originalIdx * cat->bytesPerItem);
@@ -1637,7 +1662,7 @@ int main(int argc, char** argv) {
                 u8 qty = 0; u32 br = 0;
                 u64 off = cat->hasColors ? (cat->saveBase + (u64)orig * cat->bytesPerItem) : (cat->saveBase + (u64)orig);
                 file->read(off, &qty, 1, &br);
-                snprintf(r.value, sizeof(r.value), (qty == 0xFF) ? "N/A" : "x%u", (unsigned)qty);
+                formatItemQty(r.value, sizeof(r.value), qty);
                 r.iconIdx = SPR_COUNT;
                 rows.push_back(r);
             }
@@ -1658,8 +1683,17 @@ int main(int argc, char** argv) {
             }
             snprintf(bottomHint, sizeof(bottomHint), "[A] Select Color   [B] Back");
         } else if (currentState == STATE_QUANTITY_SELECT) {
+            CategoryInfo* cat = getCategoryForState(previousCategory);
+            int originalIdx = cat->filteredIndices[savedItemCursor];
+            u8 curQty = 0; u32 br = 0;
+            u64 curOff = cat->hasColors
+                ? (cat->saveBase + (u64)originalIdx * cat->bytesPerItem + (u64)(selectedColor >= 0 ? selectedColor : 0))
+                : (cat->saveBase + (u64)originalIdx);
+            file->read(curOff, &curQty, 1, &br);
             snprintf(headerTitle, sizeof(headerTitle), "Set Quantity");
+            UIRow r0; snprintf(r0.label, sizeof(r0.label), "Current Owned"); formatItemQty(r0.value, sizeof(r0.value), curQty); r0.iconIdx = SPR_COUNT;
             UIRow r1; snprintf(r1.label, sizeof(r1.label), "New Quantity"); snprintf(r1.value, sizeof(r1.value), "x%d", quantityToGive); r1.iconIdx = SPR_COUNT;
+            rows.push_back(r0);
             rows.push_back(r1);
             snprintf(bottomHint, sizeof(bottomHint), "[Up/Down] +/-1  [Left/Right] +/-10\n[A] Apply  [B] Cancel");
         } else if (currentState == STATE_MII_SELECT) {

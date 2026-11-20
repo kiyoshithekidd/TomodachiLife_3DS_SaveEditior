@@ -95,6 +95,11 @@ If you have a modded 3DS and want to use the editor:
 
 ## Changelog
 
+### v0.9.3 — Fix Mii Save Corruption, Wire Touch Buttons & Sentinel Item Safety (2026-11-19)
+- **Fixed Mii Save Corruption (`#61`)**: Corrected US/EU/KR Mii `voice` (`0x1D7A`) and `personality` (`0x1D80`) offsets so `writeMiiEntry()` never overwrites the 16-byte `actualisland` ID (`0x1D48..0x1D57`).
+- **Wired Bottom-Screen Touch Buttons (`#60`)**: Connected `KEY_TOUCH` + `hidTouchRead()` hit-testing in the main loop so tapping rendered bottom-screen buttons triggers their actions.
+- **Sentinel & Out-of-Range Inventory Protection (`#62`)**: Displays native *Tomodachi Life* sentinel bytes (`0xFD` = `Locked`, `0xFE` = `x0`, `0xFF` = `N/A`) cleanly instead of raw `253`/`254`, shows `Current Owned` in `Set Quantity`, and enforces `1..99` clamping while skipping inactive `0xFF` slots.
+
 ### v0.9.2 — Home Menu `.cia` Build Support (2026-11-18)
 - **`.cia` Packaging (`#59`)**: Added `make cia` target (`bannertool` + `makerom`), `app.rsf` (UniqueId `0xF8C30` with SDMC & save archive access), custom Home Menu banner (`gfx/banner.png` + `gfx/banner.wav`), and automated `.cia` release uploads alongside `.3dsx`.
 

@@ -156,8 +156,8 @@ static inline void readMiiEntry(SafeFile* file, SaveRegion reg, int slot, MiiEnt
         file->read(getMiiFieldOffset(reg, slot, 0x2258 + g * 2, 0x2158 + g * 2), &m.levelUpGifts[g], 2, &br);
     }
 
-    file->read(getMiiFieldOffset(reg, slot, 0x1D4A, 0x1D1A), m.voice, 6, &br);
-    file->read(getMiiFieldOffset(reg, slot, 0x1D50, 0x1D20), m.personality, 5, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x1D7A, 0x1D4A), m.voice, 6, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x1D80, 0x1D50), m.personality, 5, &br);
 
     file->read(getMiiFieldOffset(reg, slot, 0x2298, 0x2198), &m.superFavFood, 2, &br);
     file->read(getMiiFieldOffset(reg, slot, 0x229A, 0x219A), &m.worstEverFood, 2, &br);
@@ -311,8 +311,8 @@ static inline void writeMiiEntry(SafeFile* file, SafeArchive* archive, SaveRegio
     for (int v = 0; v < 6; v++) voiceClamped[v] = (in.voice[v] > 100) ? 100 : in.voice[v];
     u8 persClamped[5];
     for (int p = 0; p < 5; p++) persClamped[p] = (in.personality[p] < 1) ? 1 : ((in.personality[p] > 8) ? 8 : in.personality[p]);
-    file->write(getMiiFieldOffset(reg, slot, 0x1D4A, 0x1D1A), voiceClamped, 6, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x1D50, 0x1D20), persClamped, 5, &bw);
+    file->write(getMiiFieldOffset(reg, slot, 0x1D7A, 0x1D4A), voiceClamped, 6, &bw);
+    file->write(getMiiFieldOffset(reg, slot, 0x1D80, 0x1D50), persClamped, 5, &bw);
 
     file->write(getMiiFieldOffset(reg, slot, 0x2298, 0x2198), &in.superFavFood, 2, &bw);
     file->write(getMiiFieldOffset(reg, slot, 0x229A, 0x219A), &in.worstEverFood, 2, &bw);
