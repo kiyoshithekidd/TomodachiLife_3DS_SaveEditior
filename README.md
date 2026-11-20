@@ -95,6 +95,9 @@ If you have a modded 3DS and want to use the editor:
 
 ## Changelog
 
+### v0.9.5 — Stereo 44.1 kHz Home Menu Banner Audio Fix (2026-11-19)
+- **Stereo PCM16 Banner Audio (`gfx/banner.wav`)**: Converted the Home Menu hover jingle to strict 16-bit PCM Stereo (`2` channels, `44,100 Hz`, `2.20s`) to eliminate mono CWAV chirp artifacts on 3DS speakers.
+
 ### v0.9.4 — Cozy Island Marimba Home Menu Banner Jingle (2026-11-19)
 - **Updated `.cia` Banner Audio (`gfx/banner.wav`)**: Replaced the placeholder tone with a smooth, phase-continuous F-major island marimba + warm bell chord jingle (no clicks or chirps when hovering over the Home Menu icon).
 
