@@ -95,6 +95,9 @@ If you have a modded 3DS and want to use the editor:
 
 ## Changelog
 
+### v0.9.4 — Cozy Island Marimba Home Menu Banner Jingle (2026-11-19)
+- **Updated `.cia` Banner Audio (`gfx/banner.wav`)**: Replaced the placeholder tone with a smooth, phase-continuous F-major island marimba + warm bell chord jingle (no clicks or chirps when hovering over the Home Menu icon).
+
 ### v0.9.3 — Fix Mii Save Corruption, Wire Touch Buttons & Sentinel Item Safety (2026-11-19)
 - **Fixed Mii Save Corruption (`#61`)**: Corrected US/EU/KR Mii `voice` (`0x1D7A`) and `personality` (`0x1D80`) offsets so `writeMiiEntry()` never overwrites the 16-byte `actualisland` ID (`0x1D48..0x1D57`).
 - **Wired Bottom-Screen Touch Buttons (`#60`)**: Connected `KEY_TOUCH` + `hidTouchRead()` hit-testing in the main loop so tapping rendered bottom-screen buttons triggers their actions.
