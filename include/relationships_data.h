@@ -106,16 +106,17 @@ static inline void writeRelationshipPair(SafeFile* file, SafeArchive* archive, S
     file->write(getRelTypeOffset(reg, miiA, miiB), &rType, 1, &bw);
     file->write(getRelTypeOffset(reg, miiB, miiA), &rType, 1, &bw);
 
-    // 4. Sync Mii Home ID if Married (Spouse = 4/5/11)
+    // 4. Sync Mii Home ID if Married (Spouse = 4/5/11) and one partner already owns a valid Mii Home (< 50)
     if (rType == 4 || rType == 5 || rType == 11) {
         u8 homeA = 0xFF, homeB = 0xFF;
         u32 br = 0;
         file->read(getMiiFieldOffset(reg, miiA, 0x22A9, 0x21A9), &homeA, 1, &br);
         file->read(getMiiFieldOffset(reg, miiB, 0x22A9, 0x21A9), &homeB, 1, &br);
-        u8 sharedHome = (homeA < 50) ? homeA : ((homeB < 50) ? homeB : (u8)(miiA / 2));
-        if (sharedHome >= 50) sharedHome = 0;
-        file->write(getMiiFieldOffset(reg, miiA, 0x22A9, 0x21A9), &sharedHome, 1, &bw);
-        file->write(getMiiFieldOffset(reg, miiB, 0x22A9, 0x21A9), &sharedHome, 1, &bw);
+        if (homeA < 50 || homeB < 50) {
+            u8 sharedHome = (homeA < 50) ? homeA : homeB;
+            file->write(getMiiFieldOffset(reg, miiA, 0x22A9, 0x21A9), &sharedHome, 1, &bw);
+            file->write(getMiiFieldOffset(reg, miiB, 0x22A9, 0x21A9), &sharedHome, 1, &bw);
+        }
     }
 
     if (archive && archive->get() != 0) archive->commit();

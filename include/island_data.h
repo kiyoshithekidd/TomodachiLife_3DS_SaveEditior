@@ -96,7 +96,7 @@ static inline void unlockAllBuildingsAndRankings(SafeFile* file, SafeArchive* ar
 
 struct IslandInfoData {
     char islandName[32];
-    char islandPronun[48];
+    char islandPronun[64];
     u16 streetPassEncounters;
     u16 travelersReceived;
     u16 weddings;
@@ -104,9 +104,9 @@ struct IslandInfoData {
     u16 travelersSent;
     u16 problemsSolved;
     u8 exportColorBit;   // 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80
-    u8 streetPassActive; // 0/1
-    u8 babiesAllowed;    // 0/1
-    u8 spotPassActive;   // 0/1
+    u8 streetPassActive; // 0/1 (0x1E4BE2)
+    u8 babiesAllowed;    // 0/1 (bit 6 of 0x1E4C70 = 0x40)
+    u8 spotPassActive;   // 0/1 (bit 1 of 0x1E4C71 = 0x02)
 };
 
 static inline void readIslandInfo(SafeFile* file, SaveRegion reg, IslandInfoData& out) {
@@ -127,9 +127,9 @@ static inline void readIslandInfo(SafeFile* file, SaveRegion reg, IslandInfoData
     utf16le_to_utf8_buf(out.islandName, sizeof(out.islandName), name16, 10);
 
     if (reg != REGION_JP) {
-        u16 pron16[17] = {0};
-        file->read(base + 0x3A, pron16, 32, &br);
-        utf16le_to_utf8_buf(out.islandPronun, sizeof(out.islandPronun), pron16, 16);
+        u16 pron16[21] = {0};
+        file->read(base + 0x3A, pron16, 40, &br);
+        utf16le_to_utf8_buf(out.islandPronun, sizeof(out.islandPronun), pron16, 20);
     }
 
     u64 colorOff = (reg == REGION_JP) ? 0x14BCD8 : ((reg == REGION_KR) ? 0x1EFF9A : 0x1E4BEA);
@@ -137,15 +137,18 @@ static inline void readIslandInfo(SafeFile* file, SaveRegion reg, IslandInfoData
     u64 babyOff  = (reg == REGION_JP) ? 0x14BD40 : ((reg == REGION_KR) ? 0x1F0020 : 0x1E4C70);
     u64 spotOff  = (reg == REGION_JP) ? 0x14BD41 : ((reg == REGION_KR) ? 0x1F0021 : 0x1E4C71);
 
+    u8 rawBaby = 0, rawSpot = 0;
     file->read(colorOff, &out.exportColorBit, 1, &br);
     file->read(spOff, &out.streetPassActive, 1, &br);
-    file->read(babyOff, &out.babiesAllowed, 1, &br);
-    file->read(spotOff, &out.spotPassActive, 1, &br);
+    file->read(babyOff, &rawBaby, 1, &br);
+    file->read(spotOff, &rawSpot, 1, &br);
+    out.babiesAllowed  = (rawBaby & 0x40) ? 1 : 0;
+    out.spotPassActive = (rawSpot & 0x02) ? 1 : 0;
 }
 
 static inline void writeIslandInfo(SafeFile* file, SafeArchive* archive, SaveRegion reg, const IslandInfoData& in) {
     if (!file || !file->isOpen()) return;
-    u32 bw = 0;
+    u32 bw = 0, br = 0;
     u64 base = (reg == REGION_JP) ? 0x14BCAC : ((reg == REGION_KR) ? 0x1EFF6C : 0x1E4BBC);
 
     file->write(base + 0x00, &in.streetPassEncounters, 2, &bw);
@@ -160,9 +163,9 @@ static inline void writeIslandInfo(SafeFile* file, SafeArchive* archive, SaveReg
     file->write(base + 0x10, name16, 20, &bw);
 
     if (reg != REGION_JP) {
-        u16 pron16[16] = {0};
-        utf8_to_utf16le_buf(pron16, 16, in.islandPronun);
-        file->write(base + 0x3A, pron16, 32, &bw);
+        u16 pron16[20] = {0};
+        utf8_to_utf16le_buf(pron16, 20, in.islandPronun);
+        file->write(base + 0x3A, pron16, 40, &bw);
     }
 
     u64 colorOff = (reg == REGION_JP) ? 0x14BCD8 : ((reg == REGION_KR) ? 0x1EFF9A : 0x1E4BEA);
@@ -170,10 +173,17 @@ static inline void writeIslandInfo(SafeFile* file, SafeArchive* archive, SaveReg
     u64 babyOff  = (reg == REGION_JP) ? 0x14BD40 : ((reg == REGION_KR) ? 0x1F0020 : 0x1E4C70);
     u64 spotOff  = (reg == REGION_JP) ? 0x14BD41 : ((reg == REGION_KR) ? 0x1F0021 : 0x1E4C71);
 
+    u8 rawBaby = 0, rawSpot = 0;
+    file->read(babyOff, &rawBaby, 1, &br);
+    file->read(spotOff, &rawSpot, 1, &br);
+    rawBaby = (u8)((rawBaby & ~0x40) | (in.babiesAllowed ? 0x40 : 0x00));
+    rawSpot = (u8)((rawSpot & ~0x02) | (in.spotPassActive ? 0x02 : 0x00));
+    u8 spVal = in.streetPassActive ? 1 : 0;
+
     file->write(colorOff, &in.exportColorBit, 1, &bw);
-    file->write(spOff, &in.streetPassActive, 1, &bw);
-    file->write(babyOff, &in.babiesAllowed, 1, &bw);
-    file->write(spotOff, &in.spotPassActive, 1, &bw);
+    file->write(spOff, &spVal, 1, &bw);
+    file->write(babyOff, &rawBaby, 1, &bw);
+    file->write(spotOff, &rawSpot, 1, &bw);
 
     if (archive && archive->get() != 0) archive->commit();
 }

@@ -95,6 +95,16 @@ If you have a modded 3DS and want to use the editor:
 
 ## Changelog
 
+### v0.9.6 — Deep Save Corruption Sweep & 60 FPS Food/Inventory Caching (2026-11-21)
+- **Fixed 6 Save Corruption Vectors (`#63`)**:
+  - Clamped `firstName` (`0x1CD0`) and `lastName` (`0x1CF0`) to their true **30-byte** (`15` UTF-16LE chars) field size so trailing struct bytes (`+0x7E..+0x7F`, `+0x9E..+0x9F`) are never overwritten.
+  - Guarded `Catchphrase1` (`0x1D20`) with `catchphraseDirty` so saving a Mii's status, voice, gifts, or profile never zeroes out the 32-byte locked catchphrase struct (`0x1D20..0x1D3F`) unless the catchphrase itself was explicitly edited.
+  - Preserved native `grownUpFlag` (`0x22AE`) value `0` on Adult Miis instead of forcing `0 -> 1`.
+  - Fixed `islandPronun` (`0x1E4BF6`) to its full **40-byte** (`20` UTF-16LE chars) size.
+  - Changed `babiesAllowed` (`0x1E4C70` bit 6 = `0x40`) and `spotPassActive` (`0x1E4C71` bit 1 = `0x02`) to read-modify-write bitfields instead of overwriting the whole byte with `0`/`1`.
+  - Restricted Spouse `miiHome` (`0x22A9`) sync in `writeRelationshipPair()` to only copy an existing valid Mii Home ID (`< 50`).
+- **Fixed Food & Inventory Page Lag (`#64`)**: Replaced 231–447 per-frame synchronous `FSUSER_ReadFile` IPC calls in `STATE_CATEGORY_FOOD..STATE_CATEGORY_TREASURES`, `STATE_QUANTITY_SELECT`, `STATE_REL_MII_B`, `STATE_INTERACTIONS_MII`, `STATE_TRAVELERS_LIST`, and `STATE_CONCERT_SONGS` with in-memory state caches, restoring instant 60 FPS scrolling.
+
 ### v0.9.5 — Stereo 44.1 kHz Home Menu Banner Audio Fix (2026-11-19)
 - **Stereo PCM16 Banner Audio (`gfx/banner.wav`)**: Converted the Home Menu hover jingle to strict 16-bit PCM Stereo (`2` channels, `44,100 Hz`, `2.20s`) to eliminate mono CWAV chirp artifacts on 3DS speakers.
 

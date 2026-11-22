@@ -860,6 +860,26 @@ int main(int argc, char** argv) {
     char statusToast[96] = "";
     bool confirmDeleteMii = false;
 
+    // ── Frame-Rate Cache (#64): prevent per-frame FSUSER_ReadFile lag ──
+    std::vector<u8> cachedCatBytes;
+    MenuState cachedCatState = STATE_MAIN_MENU;
+    std::vector<RelationshipPair> cachedRelPairs;
+    int cachedRelMiiA = -1;
+    std::vector<MiiInteractionData> cachedInteractions;
+    bool cachedInteractionsValid = false;
+    std::vector<TravelerSummary> cachedTravelers;
+    bool cachedTravelersValid = false;
+    std::vector<ConcertSongData> cachedSongs;
+    bool cachedSongsValid = false;
+
+    auto invalidateCaches = [&]() {
+        cachedCatState = STATE_MAIN_MENU;
+        cachedRelMiiA = -1;
+        cachedInteractionsValid = false;
+        cachedTravelersValid = false;
+        cachedSongsValid = false;
+    };
+
     MenuState currentState = STATE_MAIN_MENU;
     int cursorIndex = 0;
     int scrollOffset = 0;
@@ -918,12 +938,14 @@ int main(int argc, char** argv) {
                     currentState = STATE_MONEY_EDIT;
                 } else if (cursorIndex >= 1 && cursorIndex <= 6) {
                     currentState = (MenuState)(STATE_CATEGORY_FOOD + (cursorIndex - 1));
+                    invalidateCaches();
                     cursorIndex = 0; scrollOffset = 0;
                 } else if (cursorIndex == 7) {
                     renderBusyFrame("Unlocking Specials...", "Unlocking SpotPass & StreetPass items...");
                     unlockSpecialItems(file.get(), archive.get(), &categories[1], 99);
                     unlockSpecialItems(file.get(), archive.get(), &categories[2], 99);
                     unlockSpecialFoods(file.get(), archive.get(), 99);
+                    invalidateCaches();
                     snprintf(statusToast, sizeof(statusToast), "Unlocked SpotPass/StreetPass Items!");
                 } else if (cursorIndex == 8) {
                     scanRegisteredMiis(file.get(), currentRegion, miiList);
@@ -931,6 +953,7 @@ int main(int argc, char** argv) {
                     cursorIndex = 0; scrollOffset = 0;
                 } else if (cursorIndex == 9) {
                     scanRegisteredMiis(file.get(), currentRegion, miiList);
+                    invalidateCaches();
                     currentState = STATE_REL_MII_A;
                     cursorIndex = 0; scrollOffset = 0;
                 } else if (cursorIndex == 10) {
@@ -943,6 +966,7 @@ int main(int argc, char** argv) {
                     cursorIndex = 0; scrollOffset = 0;
                 } else if (cursorIndex == 12) {
                     scanRegisteredMiis(file.get(), currentRegion, miiList);
+                    invalidateCaches();
                     currentState = STATE_INTERACTIONS_MII;
                     cursorIndex = 0; scrollOffset = 0;
                 } else if (cursorIndex == 13) {
@@ -951,22 +975,26 @@ int main(int argc, char** argv) {
                 }
             }
             if ((kDown & KEY_X) && fileOpenSuccess) {
+                invalidateCaches();
                 currentState = STATE_TRAVELERS_CONCERT_MENU;
                 cursorIndex = 0; scrollOffset = 0;
             }
             if ((kDown & KEY_Y) && fileOpenSuccess) {
                 if (restoreBackup(file.get(), archive.get())) {
                     readIslandMetadata(file.get(), currentRegion, &currentMoney, islandNameUTF8);
+                    invalidateCaches();
                     snprintf(statusToast, sizeof(statusToast), "Restored from savedataArc.bak!");
                 }
             }
             if (kDown & KEY_L) {
                 currentRegion = (SaveRegion)(((int)currentRegion + 3) % 4);
                 updateRegionOffsets();
+                invalidateCaches();
                 if (fileOpenSuccess) readIslandMetadata(file.get(), currentRegion, &currentMoney, islandNameUTF8);
             } else if (kDown & KEY_R) {
                 currentRegion = (SaveRegion)(((int)currentRegion + 1) % 4);
                 updateRegionOffsets();
+                invalidateCaches();
                 if (fileOpenSuccess) readIslandMetadata(file.get(), currentRegion, &currentMoney, islandNameUTF8);
             }
         }
@@ -1002,6 +1030,7 @@ int main(int argc, char** argv) {
             if ((kDown & KEY_X) && fileOpenSuccess) {
                 renderBusyFrame("Unlocking Category...", "Writing valid items (x99)...");
                 unlockCategoryAll(file.get(), archive.get(), cat, 99);
+                cachedCatState = STATE_MAIN_MENU;
                 snprintf(statusToast, sizeof(statusToast), "Unlocked all %s!", getTitleForState(currentState));
             }
             if ((kDown & KEY_A) && maxItems > 0 && fileOpenSuccess) {
@@ -1074,6 +1103,7 @@ int main(int argc, char** argv) {
                     }
                 }
                 if (archive != nullptr && archive->get() != 0) archive->commit();
+                cachedCatState = STATE_MAIN_MENU;
                 currentState = previousCategory;
                 cursorIndex = savedItemCursor;
             }
@@ -1253,15 +1283,15 @@ int main(int argc, char** argv) {
             }
             if (kDown & KEY_A) {
                 if (cursorIndex == 0) editStringWithKeyboard(activeMii.nickname, 10, "Mii Nickname");
-                else if (cursorIndex == 1) editStringWithKeyboard(activeMii.firstName, 16, "First Name");
-                else if (cursorIndex == 2) editStringWithKeyboard(activeMii.lastName, 16, "Last Name");
+                else if (cursorIndex == 1) editStringWithKeyboard(activeMii.firstName, 15, "First Name");
+                else if (cursorIndex == 2) editStringWithKeyboard(activeMii.lastName, 15, "Last Name");
                 else if (cursorIndex == 3) activeMii.gender = (activeMii.gender == 0) ? 1 : 0;
                 else if (cursorIndex == 4) activeMii.favColor = (activeMii.favColor + 1) % 12;
                 else if (cursorIndex == 5) activeMii.grownUpFlag = (activeMii.grownUpFlag == 2) ? 1 : 2;
                 else if (cursorIndex == 6) activeMii.relationToYou = (activeMii.relationToYou + 1) % 12;
                 else if (cursorIndex == 7) activeMii.birthMonth = (u8)((activeMii.birthMonth + 1) % 13);
                 else if (cursorIndex == 8) activeMii.birthDay = (u8)((activeMii.birthDay + 1) % 32);
-                else if (cursorIndex == 9) editStringWithKeyboard(activeMii.catchphrase, 16, "Mii Catchphrase");
+                else if (cursorIndex == 9) { editStringWithKeyboard(activeMii.catchphrase, 16, "Mii Catchphrase"); activeMii.catchphraseDirty = true; }
                 else if (cursorIndex == 10) activeMii.sharing = activeMii.sharing ? 0 : 1;
                 else if (cursorIndex == 11) activeMii.copying = activeMii.copying ? 0 : 1;
             }
@@ -1348,15 +1378,18 @@ int main(int argc, char** argv) {
             if ((kDown & KEY_Y) && !miiList.empty()) {
                 renderBusyFrame("Resolving Fights...", "Scanning & clearing relationship fights...");
                 int r = resolveAllRelationshipFights(file.get(), archive.get(), currentRegion);
+                cachedRelMiiA = -1;
                 snprintf(statusToast, sizeof(statusToast), "Resolved %d fights!", r);
             }
             if ((kDown & KEY_X) && !miiList.empty()) {
                 renderBusyFrame("Updating Feelings...", "Maxing all acquainted feelings to 200...");
                 maxAllAcquaintedFeelings(file.get(), archive.get(), currentRegion);
+                cachedRelMiiA = -1;
                 snprintf(statusToast, sizeof(statusToast), "Maxed all acquainted feelings (200)!");
             }
             if ((kDown & KEY_A) && miiList.size() >= 2) {
                 relMiiAIdx = cursorIndex;
+                cachedRelMiiA = -1;
                 currentState = STATE_REL_MII_B;
                 cursorIndex = (relMiiAIdx == 0) ? 1 : 0; scrollOffset = 0;
             }
@@ -1376,6 +1409,7 @@ int main(int argc, char** argv) {
             if (kDown & KEY_B) {
                 writeRelationshipPair(file.get(), archive.get(), currentRegion,
                                       miiList[relMiiAIdx].slotIndex, miiList[relMiiBIdx].slotIndex, activeRel);
+                cachedRelMiiA = -1;
                 currentState = STATE_REL_MII_B;
                 cursorIndex = relMiiBIdx; scrollOffset = 0;
             }
@@ -1430,7 +1464,7 @@ int main(int argc, char** argv) {
             if (cursorIndex == 0 && (kDown & KEY_A)) {
                 editStringWithKeyboard(activeIslandInfo.islandName, 10, "Island Name");
             } else if (cursorIndex == 1 && (kDown & KEY_A)) {
-                editStringWithKeyboard(activeIslandInfo.islandPronun, 16, "Island Pronunciation");
+                editStringWithKeyboard(activeIslandInfo.islandPronun, 20, "Island Pronunciation");
             } else if (d != 0) {
                 auto stepU16 = [&](u16& val) {
                     int nv = (int)val + d;
@@ -1468,6 +1502,7 @@ int main(int argc, char** argv) {
             adjustListNav(kDown, 4);
             if (kDown & KEY_B) {
                 writeMiiInteraction(file.get(), archive.get(), currentRegion, miiList[selectedMiiListIdx].slotIndex, activeInteraction);
+                cachedInteractionsValid = false;
                 currentState = STATE_INTERACTIONS_MII; cursorIndex = selectedMiiListIdx; scrollOffset = 0;
             }
             if (kDown & KEY_X) {
@@ -1490,6 +1525,7 @@ int main(int argc, char** argv) {
             if (kDown & KEY_B) { currentState = STATE_MAIN_MENU; cursorIndex = 13; scrollOffset = 0; }
             if ((kDown & KEY_A) && fileOpenSuccess) {
                 renderBusyFrame("Applying Extras...", "Updating save data. Please wait...");
+                invalidateCaches();
                 if (cursorIndex == 0) {
                     int n = setAllMiisStomach(file.get(), archive.get(), currentRegion, 100);
                     snprintf(statusToast, sizeof(statusToast), "Filled %d Miis' stomachs (100%%)!", n);
@@ -1523,6 +1559,7 @@ int main(int argc, char** argv) {
             adjustListNav(kDown, 2);
             if (kDown & KEY_B) { currentState = STATE_MAIN_MENU; cursorIndex = 0; scrollOffset = 0; }
             if (kDown & KEY_A) {
+                invalidateCaches();
                 currentState = (cursorIndex == 0) ? STATE_TRAVELERS_LIST : STATE_CONCERT_SONGS;
                 cursorIndex = 0; scrollOffset = 0;
             }
@@ -1538,6 +1575,7 @@ int main(int argc, char** argv) {
             }
             if ((kDown & KEY_X) && fileOpenSuccess) {
                 clearTravelerSlot(file.get(), archive.get(), currentRegion, cursorIndex);
+                cachedTravelersValid = false;
                 snprintf(statusToast, sizeof(statusToast), "Cleared Traveler slot %d!", cursorIndex + 1);
             }
         }
@@ -1545,6 +1583,7 @@ int main(int argc, char** argv) {
             adjustListNav(kDown, 5); // Nickname, Message, On Island, Level, EXP
             if (kDown & KEY_B) {
                 writeTravelerData(file.get(), archive.get(), currentRegion, activeTraveler);
+                cachedTravelersValid = false;
                 currentState = STATE_TRAVELERS_LIST; cursorIndex = activeTravelerIdx; scrollOffset = 0;
             }
             if (kDown & KEY_A) {
@@ -1575,6 +1614,7 @@ int main(int argc, char** argv) {
             adjustListNav(kDown, 15); // Title + Genre + 13 Lyric lines
             if (kDown & KEY_B) {
                 writeConcertSong(file.get(), archive.get(), activeSongIdx, activeSong);
+                cachedSongsValid = false;
                 currentState = STATE_CONCERT_SONGS; cursorIndex = activeSongIdx; scrollOffset = 0;
             }
             if (kDown & KEY_A) {
@@ -1649,6 +1689,13 @@ int main(int argc, char** argv) {
             CategoryInfo* cat = getCategoryForState(currentState);
             headerIcon = SPR_ICON_FOOD + (size_t)(currentState - STATE_CATEGORY_FOOD);
             snprintf(headerTitle, sizeof(headerTitle), "%s (%zu items)", getTitleForState(currentState), cat->filteredIndices.size());
+            u32 totalBytes = (u32)(cat->maxItems * cat->bytesPerItem);
+            if (cachedCatState != currentState || cachedCatBytes.size() != totalBytes) {
+                cachedCatBytes.assign(totalBytes, 0xFD);
+                u32 br = 0;
+                file->read(cat->saveBase, cachedCatBytes.data(), totalBytes, &br);
+                cachedCatState = currentState;
+            }
             for (size_t i = 0; i < cat->filteredIndices.size(); i++) {
                 int orig = cat->filteredIndices[i];
                 UIRow r;
@@ -1659,9 +1706,8 @@ int main(int argc, char** argv) {
                 } else {
                     snprintf(r.label, sizeof(r.label), "Item #%d", orig + 1);
                 }
-                u8 qty = 0; u32 br = 0;
-                u64 off = cat->hasColors ? (cat->saveBase + (u64)orig * cat->bytesPerItem) : (cat->saveBase + (u64)orig);
-                file->read(off, &qty, 1, &br);
+                u32 relOff = cat->hasColors ? (u32)(orig * cat->bytesPerItem) : (u32)orig;
+                u8 qty = (relOff < cachedCatBytes.size()) ? cachedCatBytes[relOff] : 0xFD;
                 formatItemQty(r.value, sizeof(r.value), qty);
                 r.iconIdx = SPR_COUNT;
                 rows.push_back(r);
@@ -1685,11 +1731,17 @@ int main(int argc, char** argv) {
         } else if (currentState == STATE_QUANTITY_SELECT) {
             CategoryInfo* cat = getCategoryForState(previousCategory);
             int originalIdx = cat->filteredIndices[savedItemCursor];
-            u8 curQty = 0; u32 br = 0;
-            u64 curOff = cat->hasColors
-                ? (cat->saveBase + (u64)originalIdx * cat->bytesPerItem + (u64)(selectedColor >= 0 ? selectedColor : 0))
-                : (cat->saveBase + (u64)originalIdx);
-            file->read(curOff, &curQty, 1, &br);
+            u32 totalBytes = (u32)(cat->maxItems * cat->bytesPerItem);
+            if (cachedCatState != previousCategory || cachedCatBytes.size() != totalBytes) {
+                cachedCatBytes.assign(totalBytes, 0xFD);
+                u32 br = 0;
+                file->read(cat->saveBase, cachedCatBytes.data(), totalBytes, &br);
+                cachedCatState = previousCategory;
+            }
+            u32 relOff = cat->hasColors
+                ? (u32)(originalIdx * cat->bytesPerItem + (selectedColor >= 0 ? selectedColor : 0))
+                : (u32)originalIdx;
+            u8 curQty = (relOff < cachedCatBytes.size()) ? cachedCatBytes[relOff] : 0xFD;
             snprintf(headerTitle, sizeof(headerTitle), "Set Quantity");
             UIRow r0; snprintf(r0.label, sizeof(r0.label), "Current Owned"); formatItemQty(r0.value, sizeof(r0.value), curQty); r0.iconIdx = SPR_COUNT;
             UIRow r1; snprintf(r1.label, sizeof(r1.label), "New Quantity"); snprintf(r1.value, sizeof(r1.value), "x%d", quantityToGive); r1.iconIdx = SPR_COUNT;
@@ -1805,6 +1857,15 @@ int main(int argc, char** argv) {
             snprintf(headerTitle, sizeof(headerTitle),
                      (currentState == STATE_REL_MII_A) ? "Relationships: Select Mii A" : "Relationships: %s <-> Mii B",
                      (currentState == STATE_REL_MII_A) ? "" : miiList[relMiiAIdx].nickname);
+            if (currentState == STATE_REL_MII_B && (cachedRelMiiA != relMiiAIdx || cachedRelPairs.size() != miiList.size())) {
+                cachedRelPairs.resize(miiList.size());
+                for (size_t i = 0; i < miiList.size(); i++) {
+                    if ((int)i != relMiiAIdx) {
+                        readRelationshipPair(file.get(), currentRegion, miiList[relMiiAIdx].slotIndex, miiList[i].slotIndex, cachedRelPairs[i]);
+                    }
+                }
+                cachedRelMiiA = relMiiAIdx;
+            }
             for (size_t i = 0; i < miiList.size(); i++) {
                 UIRow r;
                 snprintf(r.label, sizeof(r.label), "%s", miiList[i].nickname);
@@ -1813,8 +1874,7 @@ int main(int argc, char** argv) {
                     if ((int)i == relMiiAIdx) {
                         snprintf(r.value, sizeof(r.value), "(Self)");
                     } else {
-                        RelationshipPair rp;
-                        readRelationshipPair(file.get(), currentRegion, miiList[relMiiAIdx].slotIndex, miiList[i].slotIndex, rp);
+                        const RelationshipPair& rp = cachedRelPairs[i];
                         snprintf(r.value, sizeof(r.value), "%s (%u/%u)", getRelationshipTypeName(rp.relType),
                                  (unsigned)rp.feelingAtoB, (unsigned)rp.feelingBtoA);
                         if (isRelationshipConflict(rp.relType)) r.iconIdx = SPR_BADGE_CONFLICT_STORM;
@@ -1835,8 +1895,8 @@ int main(int argc, char** argv) {
             headerIcon = SPR_ICON_RELATIONSHIPS;
             snprintf(headerTitle, sizeof(headerTitle), "%s <-> %s", miiList[relMiiAIdx].nickname, miiList[relMiiBIdx].nickname);
             UIRow r1; snprintf(r1.label, sizeof(r1.label), "Relationship Type (Symmetric)"); snprintf(r1.value, sizeof(r1.value), "%s", getRelationshipTypeName(activeRel.relType)); r1.iconIdx = SPR_COUNT;
-            UIRow r2; snprintf(r2.label, sizeof(r2.label), "%s -> %s Feeling", miiList[relMiiAIdx].nickname, miiList[relMiiBIdx].nickname); snprintf(r2.value, sizeof(r2.value), "%u / 200", activeRel.feelingAtoB); r2.iconIdx = SPR_COUNT;
-            UIRow r3; snprintf(r3.label, sizeof(r3.label), "%s -> %s Feeling", miiList[relMiiBIdx].nickname, miiList[relMiiAIdx].nickname); snprintf(r3.value, sizeof(r3.value), "%u / 200", activeRel.feelingBtoA); r3.iconIdx = SPR_COUNT;
+            UIRow r2; snprintf(r2.label, sizeof(r2.label), "%.20s -> %.20s Feeling", miiList[relMiiAIdx].nickname, miiList[relMiiBIdx].nickname); snprintf(r2.value, sizeof(r2.value), "%u / 200", activeRel.feelingAtoB); r2.iconIdx = SPR_COUNT;
+            UIRow r3; snprintf(r3.label, sizeof(r3.label), "%.20s -> %.20s Feeling", miiList[relMiiBIdx].nickname, miiList[relMiiAIdx].nickname); snprintf(r3.value, sizeof(r3.value), "%u / 200", activeRel.feelingBtoA); r3.iconIdx = SPR_COUNT;
             rows.push_back(r1); rows.push_back(r2); rows.push_back(r3);
             snprintf(bottomHint, sizeof(bottomHint), "[Left/Right] Adjust   [A] +10   [X] Max Both 200\n[B] Save & Back");
         } else if (currentState == STATE_ISLAND_CONFIG) {
@@ -1862,8 +1922,8 @@ int main(int argc, char** argv) {
             const char* labels[12] = {"Island Name", "Island Pronunciation", "Problems Solved", "Weddings", "Children Born", "StreetPass Encounters", "Travelers Received", "Travelers Sent", "StreetPass Active", "Babies Allowed", "SpotPass Active", "Export Outfit Color"};
             for (int i = 0; i < 12; i++) {
                 UIRow r; snprintf(r.label, sizeof(r.label), "%s", labels[i]); r.iconIdx = SPR_COUNT;
-                if (i == 0) snprintf(r.value, sizeof(r.value), "%s", activeIslandInfo.islandName);
-                else if (i == 1) snprintf(r.value, sizeof(r.value), "%s", activeIslandInfo.islandPronun);
+                if (i == 0) snprintf(r.value, sizeof(r.value), "%.24s", activeIslandInfo.islandName);
+                else if (i == 1) snprintf(r.value, sizeof(r.value), "%.24s", activeIslandInfo.islandPronun);
                 else if (i == 2) snprintf(r.value, sizeof(r.value), "%u", activeIslandInfo.problemsSolved);
                 else if (i == 3) snprintf(r.value, sizeof(r.value), "%u", activeIslandInfo.weddings);
                 else if (i == 4) snprintf(r.value, sizeof(r.value), "%u", activeIslandInfo.childrenBorn);
@@ -1880,11 +1940,16 @@ int main(int argc, char** argv) {
         } else if (currentState == STATE_INTERACTIONS_MII) {
             headerIcon = SPR_ICON_INTERACTIONS;
             snprintf(headerTitle, sizeof(headerTitle), "Active Mii Interactions");
+            if (!cachedInteractionsValid || cachedInteractions.size() != miiList.size()) {
+                cachedInteractions.resize(miiList.size());
+                for (size_t i = 0; i < miiList.size(); i++) {
+                    readMiiInteraction(file.get(), currentRegion, miiList[i].slotIndex, cachedInteractions[i]);
+                }
+                cachedInteractionsValid = true;
+            }
             for (size_t i = 0; i < miiList.size(); i++) {
-                MiiInteractionData id;
-                readMiiInteraction(file.get(), currentRegion, miiList[i].slotIndex, id);
                 UIRow r; snprintf(r.label, sizeof(r.label), "%s", miiList[i].nickname);
-                snprintf(r.value, sizeof(r.value), "%s", getEmotionName(id.emotion));
+                snprintf(r.value, sizeof(r.value), "%s", getEmotionName(cachedInteractions[i].emotion));
                 r.iconIdx = SPR_COUNT; rows.push_back(r);
             }
             snprintf(bottomHint, sizeof(bottomHint), "[A] Edit Window Bubble   [B] Back");
@@ -1916,9 +1981,15 @@ int main(int argc, char** argv) {
         } else if (currentState == STATE_TRAVELERS_LIST) {
             headerIcon = SPR_ICON_CONCERT;
             snprintf(headerTitle, sizeof(headerTitle), "StreetPass Travelers (50)");
+            if (!cachedTravelersValid || (int)cachedTravelers.size() != MAX_TRAVELERS) {
+                cachedTravelers.resize(MAX_TRAVELERS);
+                for (int i = 0; i < MAX_TRAVELERS; i++) {
+                    readTravelerSummary(file.get(), currentRegion, i, cachedTravelers[i]);
+                }
+                cachedTravelersValid = true;
+            }
             for (int i = 0; i < MAX_TRAVELERS; i++) {
-                TravelerSummary ts;
-                readTravelerSummary(file.get(), currentRegion, i, ts);
+                const TravelerSummary& ts = cachedTravelers[i];
                 UIRow r; snprintf(r.label, sizeof(r.label), "[%02d] %s", i + 1, ts.nickname);
                 snprintf(r.value, sizeof(r.value), ts.present ? "Active" : "Empty"); r.iconIdx = SPR_COUNT;
                 rows.push_back(r);
@@ -1941,9 +2012,15 @@ int main(int argc, char** argv) {
         } else if (currentState == STATE_CONCERT_SONGS) {
             headerIcon = SPR_ICON_CONCERT;
             snprintf(headerTitle, sizeof(headerTitle), "Concert Hall Songs");
+            if (!cachedSongsValid || cachedSongs.size() != 8) {
+                cachedSongs.resize(8);
+                for (int i = 0; i < 8; i++) {
+                    readConcertSong(file.get(), i, cachedSongs[i]);
+                }
+                cachedSongsValid = true;
+            }
             for (int i = 0; i < 8; i++) {
-                ConcertSongData cs;
-                readConcertSong(file.get(), i, cs);
+                const ConcertSongData& cs = cachedSongs[i];
                 UIRow r; snprintf(r.label, sizeof(r.label), "%s", cs.title);
                 snprintf(r.value, sizeof(r.value), "%s", getConcertGenreName(cs.genre)); r.iconIdx = SPR_COUNT;
                 rows.push_back(r);

@@ -27,8 +27,9 @@ struct MiiEntry {
     u8 birthDay;        // 0 = Unset, 1..31 (0x1C88 bits 7..5 | 0x1C89 bits 1..0)
     u8 favColor;        // 0..11 (0x1C89 bits 5..2)
     u8 relationToYou;   // 0..11
-    u8 grownUpFlag;     // 1 = Adult (can marry), 2 = Kid
+    u8 grownUpFlag;     // 0 or 1 = Adult (can marry), 2 = Kid
     char catchphrase[48]; // 0x1D20 US/EU/KR, 0x1CF0 JP (16 UTF-16 chars)
+    bool catchphraseDirty; // only write 0x1D20 when explicitly edited (#63)
     u8 sharing;         // 0/1 (0x1CA0 bit 0 US/EU/KR, 0x1C70 bit 0 JP)
     u8 copying;         // 0/1 (0x1C71 bit 0 US/EU/KR, 0x1C41 bit 0 JP)
     // Status
@@ -107,14 +108,14 @@ static inline void readMiiEntry(SafeFile* file, SaveRegion reg, int slot, MiiEnt
     m.isRegistered = (regFlag == 1);
 
     u16 nick16[11] = {0};
-    u16 first16[17] = {0};
-    u16 last16[17] = {0};
+    u16 first16[16] = {0};
+    u16 last16[16] = {0};
     file->read(getMiiFieldOffset(reg, slot, 0x1C8A, 0x1C5A), nick16, 20, &br);
-    file->read(getMiiFieldOffset(reg, slot, 0x1CD0, 0x1CA0), first16, 32, &br);
-    file->read(getMiiFieldOffset(reg, slot, 0x1CF0, 0x1CC0), last16, 32, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x1CD0, 0x1CA0), first16, 30, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x1CF0, 0x1CC0), last16, 30, &br);
     utf16le_to_utf8_buf(m.nickname, sizeof(m.nickname), nick16, 10);
-    utf16le_to_utf8_buf(m.firstName, sizeof(m.firstName), first16, 16);
-    utf16le_to_utf8_buf(m.lastName, sizeof(m.lastName), last16, 16);
+    utf16le_to_utf8_buf(m.firstName, sizeof(m.firstName), first16, 15);
+    utf16le_to_utf8_buf(m.lastName, sizeof(m.lastName), last16, 15);
     if (m.nickname[0] == '\0') snprintf(m.nickname, sizeof(m.nickname), "Mii #%d", slot + 1);
 
     // CFSD bitfields at 0x1C88 & 0x1C89 (US/EU/KR) / 0x1C58 & 0x1C59 (JP)
@@ -138,6 +139,7 @@ static inline void readMiiEntry(SafeFile* file, SaveRegion reg, int slot, MiiEnt
     u16 catch16[17] = {0};
     file->read(getMiiFieldOffset(reg, slot, 0x1D20, 0x1CF0), catch16, 32, &br);
     utf16le_to_utf8_buf(m.catchphrase, sizeof(m.catchphrase), catch16, 16);
+    m.catchphraseDirty = false;
 
     file->read(getMiiFieldOffset(reg, slot, 0x1F22, 0x1E22), &m.experience, 1, &br);
     file->read(getMiiFieldOffset(reg, slot, 0x1F23, 0x1E23), &m.level, 1, &br);
@@ -245,7 +247,7 @@ static inline void writeMiiEntry(SafeFile* file, SafeArchive* archive, SaveRegio
     u8 bDay   = (in.birthDay > 31) ? 31 : in.birthDay;
     u8 favCol = (in.favColor > 11) ? 11 : in.favColor;
     u8 relYou = (in.relationToYou > 11) ? 0 : in.relationToYou;
-    u8 grown  = (in.grownUpFlag == 2) ? 2 : 1;
+    u8 grown  = (in.grownUpFlag > 2) ? 0 : in.grownUpFlag;
     u8 xp     = (in.experience > 99) ? 99 : in.experience;
     u8 lv     = (in.level < 1) ? 1 : ((in.level > 99) ? 99 : in.level);
     u32 pamp  = (in.pampered > 99999999) ? 99999999 : in.pampered;
@@ -255,15 +257,15 @@ static inline void writeMiiEntry(SafeFile* file, SafeArchive* archive, SaveRegio
     u8 room   = (in.apartmentRoom > 99) ? 99 : in.apartmentRoom;
 
     u16 nick16[10] = {0};
-    u16 first16[16] = {0};
-    u16 last16[16] = {0};
+    u16 first16[15] = {0};
+    u16 last16[15] = {0};
     utf8_to_utf16le_buf(nick16, 10, in.nickname);
-    utf8_to_utf16le_buf(first16, 16, in.firstName);
-    utf8_to_utf16le_buf(last16, 16, in.lastName);
+    utf8_to_utf16le_buf(first16, 15, in.firstName);
+    utf8_to_utf16le_buf(last16, 15, in.lastName);
 
     file->write(getMiiFieldOffset(reg, slot, 0x1C8A, 0x1C5A), nick16, 20, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x1CD0, 0x1CA0), first16, 32, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x1CF0, 0x1CC0), last16, 32, &bw);
+    file->write(getMiiFieldOffset(reg, slot, 0x1CD0, 0x1CA0), first16, 30, &bw);
+    file->write(getMiiFieldOffset(reg, slot, 0x1CF0, 0x1CC0), last16, 30, &bw);
 
     // Read-modify-write CFSD bitfields (preserving bits 7..6 of 0x1C89)
     u8 b88 = 0, b89 = 0;
@@ -286,9 +288,11 @@ static inline void writeMiiEntry(SafeFile* file, SafeArchive* archive, SaveRegio
     file->write(getMiiFieldOffset(reg, slot, 0x1CA0, 0x1C70), &rawSharing, 1, &bw);
     file->write(getMiiFieldOffset(reg, slot, 0x1C71, 0x1C41), &rawCopying, 1, &bw);
 
-    u16 catch16[16] = {0};
-    utf8_to_utf16le_buf(catch16, 16, in.catchphrase);
-    file->write(getMiiFieldOffset(reg, slot, 0x1D20, 0x1CF0), catch16, 32, &bw);
+    if (in.catchphraseDirty) {
+        u16 catch16[16] = {0};
+        utf8_to_utf16le_buf(catch16, 16, in.catchphrase);
+        file->write(getMiiFieldOffset(reg, slot, 0x1D20, 0x1CF0), catch16, 32, &bw);
+    }
 
     file->write(getMiiFieldOffset(reg, slot, 0x1F22, 0x1E22), &xp, 1, &bw);
     file->write(getMiiFieldOffset(reg, slot, 0x1F23, 0x1E23), &lv, 1, &bw);
