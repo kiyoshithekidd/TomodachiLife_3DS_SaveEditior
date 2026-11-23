@@ -95,6 +95,12 @@ If you have a modded 3DS and want to use the editor:
 
 ## Changelog
 
+### v1.0.1 — Equipped Clothes/Hat Safety Lock & Level-Up Gift Guard (2026-11-23)
+- **Equipped Clothes & Hat Safety Lock (`#68`)**:
+  - Locked **Equipped Clothes** (`0x1D42`) and **Equipped Hat** (`0x1D44`) in **Mii → Equipped, Gifts & Foods** as read-only (`ID #... (Locked)`, with `[Y]` still available to unequip Hats to `None`) until the packed variant ID table is mapped, preventing save corruption from writing `inventory_slot * 8 + color` IDs.
+- **Level-Up Gift Level Qualification (`#68`)**:
+  - Enforced `min(8, max(0, level - 1))` qualified gift slots on **Level-Up Gift #1–#8**, displaying `Locked (Lv.N+)` for unqualified slots.
+
 ### v1.0.0 — Full Release: Scrollable Mii Item/Color Pickers & Validated Item Lists (2026-11-23)
 - **Full Scrollable Mii Item & Color Pickers (`#67`)**:
   - Pressing `[A]` on any row in **Mii → Equipped, Gifts & Foods** now opens a full scrollable picker list (`STATE_MII_ITEM_PICKER`) pre-positioned on the Mii's current item, with `[L/R]` `±10` page jumping.
