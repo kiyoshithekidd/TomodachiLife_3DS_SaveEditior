@@ -95,6 +95,10 @@ If you have a modded 3DS and want to use the editor:
 
 ## Changelog
 
+### v1.0.2 — Equipped Interior Safety Lock (2026-11-23)
+- **Equipped Interior Safety Lock (`#70`, `#71`)**:
+  - Locked **Equipped Interior** (`0x1F20`) in **Mii → Equipped, Gifts & Foods** as read-only (`ID #... (Locked)`), matching **Equipped Clothes** and **Equipped Hat** while the packed/RomFS ID tables are mapped.
+
 ### v1.0.1 — Equipped Clothes/Hat Safety Lock & Level-Up Gift Guard (2026-11-23)
 - **Equipped Clothes & Hat Safety Lock (`#68`)**:
   - Locked **Equipped Clothes** (`0x1D42`) and **Equipped Hat** (`0x1D44`) in **Mii → Equipped, Gifts & Foods** as read-only (`ID #... (Locked)`, with `[Y]` still available to unequip Hats to `None`) until the packed variant ID table is mapped, preventing save corruption from writing `inventory_slot * 8 + color` IDs.
