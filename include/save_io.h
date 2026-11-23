@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <sys/stat.h>
+#include <time.h>
 
 #ifdef HOST_TEST
 typedef uint8_t u8;
@@ -122,16 +123,42 @@ private:
         mkdir("sdmc:/3ds", 0777);
         mkdir("sdmc:/3ds/tlse", 0777);
         mkdir("sdmc:/3ds/tlse/backups", 0777);
-        const char* backupPath = "sdmc:/3ds/tlse/backups/savedataArc.bak";
+        const char* backupDir = "sdmc:/3ds/tlse/backups";
 #else
-        const char* backupPath = "/tmp/savedataArc.bak";
+        const char* backupDir = "/tmp";
 #endif
-        FILE* out = fopen(backupPath, "wb");
-        if (!out) {
-            backupPath = "savedataArc.bak";
-            out = fopen(backupPath, "wb");
+        char latestPath[256];
+        snprintf(latestPath, sizeof(latestPath), "%s/savedataArc.bak", backupDir);
+        FILE* outLatest = fopen(latestPath, "wb");
+        if (!outLatest) {
+            outLatest = fopen("savedataArc.bak", "wb");
         }
-        if (!out) {
+
+        // Preserve an immutable initial backup on the very first edit
+        char initialPath[256];
+        snprintf(initialPath, sizeof(initialPath), "%s/savedataArc_initial.bak", backupDir);
+        FILE* outInitial = nullptr;
+        FILE* checkInit = fopen(initialPath, "rb");
+        if (checkInit) {
+            fclose(checkInit);
+        } else {
+            outInitial = fopen(initialPath, "wb");
+        }
+
+        // Also keep a timestamped per-session backup so history is never lost
+        FILE* outDated = nullptr;
+        time_t now = time(nullptr);
+        struct tm* tmNow = localtime(&now);
+        if (tmNow) {
+            char datedPath[256];
+            snprintf(datedPath, sizeof(datedPath), "%s/savedataArc_%04d%02d%02d_%02d%02d%02d.bak",
+                     backupDir,
+                     tmNow->tm_year + 1900, tmNow->tm_mon + 1, tmNow->tm_mday,
+                     tmNow->tm_hour, tmNow->tm_min, tmNow->tm_sec);
+            outDated = fopen(datedPath, "wb");
+        }
+
+        if (!outLatest && !outInitial && !outDated) {
             snprintf(g_backupStatus, sizeof(g_backupStatus), "Backup Failed (SD Read-Only)");
             return;
         }
@@ -143,12 +170,21 @@ private:
             if (R_FAILED(read(offset, chunk, sizeof(chunk), &bytesRead)) || bytesRead == 0) {
                 break;
             }
-            fwrite(chunk, 1, bytesRead, out);
+            if (outLatest)  fwrite(chunk, 1, bytesRead, outLatest);
+            if (outInitial) fwrite(chunk, 1, bytesRead, outInitial);
+            if (outDated)   fwrite(chunk, 1, bytesRead, outDated);
             offset += bytesRead;
             if (bytesRead < sizeof(chunk)) break;
         }
-        fclose(out);
-        snprintf(g_backupStatus, sizeof(g_backupStatus), "Saved (savedataArc.bak)");
+        if (outLatest)  fclose(outLatest);
+        if (outInitial) fclose(outInitial);
+        if (outDated)   fclose(outDated);
+
+        if (outDated || outInitial) {
+            snprintf(g_backupStatus, sizeof(g_backupStatus), "Saved (.bak + History)");
+        } else {
+            snprintf(g_backupStatus, sizeof(g_backupStatus), "Saved (savedataArc.bak)");
+        }
     }
 
 public:

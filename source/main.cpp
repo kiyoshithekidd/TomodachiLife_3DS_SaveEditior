@@ -525,14 +525,20 @@ void unlockSpecialFoods(SafeFile* file, SafeArchive* archive, u8 val) {
     if (archive && archive->get() != 0) archive->commit();
 }
 
-bool restoreBackup(SafeFile* file, SafeArchive* archive) {
+bool restoreBackup(SafeFile* file, SafeArchive* archive, bool initialOnly = false) {
     if (!file || !file->isOpen()) return false;
 
-    FILE* in = fopen("sdmc:/3ds/tlse/backups/savedataArc.bak", "rb");
-    if (!in) in = fopen("sdmc:/3ds/tlse/savedataArc.bak", "rb");
-    if (!in) in = fopen("savedataArc.bak", "rb");
+    FILE* in = nullptr;
+    if (initialOnly) {
+        in = fopen("sdmc:/3ds/tlse/backups/savedataArc_initial.bak", "rb");
+    } else {
+        in = fopen("sdmc:/3ds/tlse/backups/savedataArc.bak", "rb");
+        if (!in) in = fopen("sdmc:/3ds/tlse/savedataArc.bak", "rb");
+        if (!in) in = fopen("savedataArc.bak", "rb");
+        if (!in) in = fopen("sdmc:/3ds/tlse/backups/savedataArc_initial.bak", "rb");
+    }
     if (!in) {
-        snprintf(g_backupStatus, sizeof(g_backupStatus), "No .bak File Found");
+        snprintf(g_backupStatus, sizeof(g_backupStatus), initialOnly ? "No Initial .bak Found" : "No .bak File Found");
         return false;
     }
 
@@ -550,7 +556,7 @@ bool restoreBackup(SafeFile* file, SafeArchive* archive) {
     fclose(in);
 
     if (archive && archive->get() != 0) archive->commit();
-    snprintf(g_backupStatus, sizeof(g_backupStatus), "Restored from .bak!");
+    snprintf(g_backupStatus, sizeof(g_backupStatus), initialOnly ? "Restored initial .bak!" : "Restored from .bak!");
     return true;
 }
 
@@ -1521,7 +1527,7 @@ int main(int argc, char** argv) {
         }
         // ── Quick Extras & Save Repair (#48, #57) ────────────────────
         else if (currentState == STATE_EXTRAS_MENU) {
-            adjustListNav(kDown, 8);
+            adjustListNav(kDown, 9);
             if (kDown & KEY_B) { currentState = STATE_MAIN_MENU; cursorIndex = 13; scrollOffset = 0; }
             if ((kDown & KEY_A) && fileOpenSuccess) {
                 renderBusyFrame("Applying Extras...", "Updating save data. Please wait...");
@@ -1551,6 +1557,13 @@ int main(int argc, char** argv) {
                     int checked = 0;
                     int fixed = verifyAndRepairAllMiiChecksums(file.get(), archive.get(), currentRegion, &checked);
                     snprintf(statusToast, sizeof(statusToast), "Checked %d Miis: fixed %d CRCs!", checked, fixed);
+                } else if (cursorIndex == 8) {
+                    if (restoreBackup(file.get(), archive.get(), true)) {
+                        readIslandMetadata(file.get(), currentRegion, &currentMoney, islandNameUTF8);
+                        snprintf(statusToast, sizeof(statusToast), "Restored savedataArc_initial.bak!");
+                    } else {
+                        snprintf(statusToast, sizeof(statusToast), "No savedataArc_initial.bak found!");
+                    }
                 }
             }
         }
@@ -1965,8 +1978,8 @@ int main(int argc, char** argv) {
         } else if (currentState == STATE_EXTRAS_MENU) {
             headerIcon = SPR_ICON_EXTRAS;
             snprintf(headerTitle, sizeof(headerTitle), "Quick Extras & Save Repair");
-            const char* labels[8] = {"Fill All Miis' Stomachs (100%)", "Empty All Miis' Stomachs (0%)", "Max All Miis (Lv.99 + Pocket)", "Resolve All Relationship Fights", "Reset Apartment Room Layout", "Reset Mii News Flashes", "Repair Malformed Interactions", "Verify & Repair Mii Checksums"};
-            for (int i = 0; i < 8; i++) {
+            const char* labels[9] = {"Fill All Miis' Stomachs (100%)", "Empty All Miis' Stomachs (0%)", "Max All Miis (Lv.99 + Pocket)", "Resolve All Relationship Fights", "Reset Apartment Room Layout", "Reset Mii News Flashes", "Repair Malformed Interactions", "Verify & Repair Mii Checksums", "Restore Initial Clean Backup (.bak)"};
+            for (int i = 0; i < 9; i++) {
                 UIRow r; snprintf(r.label, sizeof(r.label), "%s", labels[i]); snprintf(r.value, sizeof(r.value), "Run"); r.iconIdx = SPR_COUNT;
                 rows.push_back(r);
             }
