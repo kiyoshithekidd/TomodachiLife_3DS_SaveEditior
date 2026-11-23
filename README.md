@@ -64,7 +64,7 @@ If you have a modded 3DS and want to use the editor:
 
 #### Mii Editor & Relationships
 - **Mii Select**: `[A]` Edit Mii, `[X]` Max All Miis (Lv.99 + Pocket Money), `[L]` Export `all_miis.tlamii`, `[R]` Import `all_miis.tlamii`
-- **Mii Submenu**: Edit Profile / Voice & Personality / Status / Equipped / Foods / Gifts, Export/Import `.tlmii`, Clone Mii, or Delete Mii (two-press confirmation)
+- **Mii Submenu**: Edit Profile / Voice & Personality / Status / Equipped, Foods & Gifts (press `[A]` on any slot for a full scrollable item & color picker, or `[Left/Right]` to step), Export/Import `.tlmii`, Clone Mii, or Delete Mii (two-press confirmation)
 - **Relationships**: `[A]` Select Mii pair, `[Y]` Resolve All Fights, `[X]` Max All Acquainted Feelings (`200`)
 
 ### Granular Set-Quantity & Color Safety
@@ -94,6 +94,12 @@ If you have a modded 3DS and want to use the editor:
 ---
 
 ## Changelog
+
+### v1.0.0 — Full Release: Scrollable Mii Item/Color Pickers & Validated Item Lists (2026-11-23)
+- **Full Scrollable Mii Item & Color Pickers (`#67`)**:
+  - Pressing `[A]` on any row in **Mii → Equipped, Gifts & Foods** now opens a full scrollable picker list (`STATE_MII_ITEM_PICKER`) pre-positioned on the Mii's current item, with `[L/R]` `±10` page jumping.
+  - Selecting **Clothes** or **Hats** opens a valid-color picker (`STATE_MII_COLOR_PICKER`) showing only that item's valid colors (`1..validColors`) with color swatch rings.
+  - Both the picker lists and `[Left/Right]` stepping now filter through valid category indices and color counts, eliminating `"Unknown"` placeholder entries and invalid color variants.
 
 ### v0.9.7 — Initial/Timestamped Backups & Building/Relationship Integrity (2026-11-23)
 - **Immutable Initial & Timestamped Session Backups (`#65`)**:
