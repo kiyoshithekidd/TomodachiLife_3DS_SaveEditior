@@ -1453,8 +1453,8 @@ int main(int argc, char** argv) {
                 }
             }
             if (kDown & KEY_A) {
-                if (cursorIndex == 0 || cursorIndex == 1) {
-                    snprintf(statusToast, sizeof(statusToast), "Equipped Clothes/Hat locked (ID map pending)");
+                if (cursorIndex == 0 || cursorIndex == 1 || cursorIndex == 2) {
+                    snprintf(statusToast, sizeof(statusToast), "Equipped items locked (ID map pending)");
                 } else if (cursorIndex >= 10 && (cursorIndex - 10) >= getMaxQualifiedGiftSlots(activeMii)) {
                     int reqLv = (cursorIndex - 10) + 2;
                     snprintf(statusToast, sizeof(statusToast), "Requires Lv.%d+ for Gift #%d!", reqLv, cursorIndex - 9);
@@ -1475,8 +1475,8 @@ int main(int argc, char** argv) {
             }
             int d = (kDown & KEY_RIGHT) ? 1 : ((kDown & KEY_LEFT) ? -1 : 0);
             if (d != 0) {
-                if (cursorIndex == 0 || cursorIndex == 1) {
-                    snprintf(statusToast, sizeof(statusToast), "Equipped Clothes/Hat locked (ID map pending)");
+                if (cursorIndex == 0 || cursorIndex == 1 || cursorIndex == 2) {
+                    snprintf(statusToast, sizeof(statusToast), "Equipped items locked (ID map pending)");
                 } else if (cursorIndex >= 10 && (cursorIndex - 10) >= getMaxQualifiedGiftSlots(activeMii)) {
                     int reqLv = (cursorIndex - 10) + 2;
                     snprintf(statusToast, sizeof(statusToast), "Requires Lv.%d+ for Gift #%d!", reqLv, cursorIndex - 9);
@@ -2027,8 +2027,10 @@ int main(int argc, char** argv) {
                 } else if (i == 1) {
                     if (activeMii.equippedHat == 0xFFFF) snprintf(r.value, sizeof(r.value), "None (Locked)");
                     else snprintf(r.value, sizeof(r.value), "ID #%u (Locked)", (unsigned)activeMii.equippedHat);
-                } else if (i == 2) formatInteriorName(activeMii.equippedInterior, r.value, sizeof(r.value));
-                else if (i == 3) formatFoodName(activeMii.superFavFood, r.value, sizeof(r.value));
+                } else if (i == 2) {
+                    if (activeMii.equippedInterior == 0xFFFF) snprintf(r.value, sizeof(r.value), "None (Locked)");
+                    else snprintf(r.value, sizeof(r.value), "ID #%u (Locked)", (unsigned)activeMii.equippedInterior);
+                } else if (i == 3) formatFoodName(activeMii.superFavFood, r.value, sizeof(r.value));
                 else if (i == 4) formatFoodName(activeMii.allTimeFavFood, r.value, sizeof(r.value));
                 else if (i == 5) formatFoodName(activeMii.favFood1, r.value, sizeof(r.value));
                 else if (i == 6) formatFoodName(activeMii.favFood2, r.value, sizeof(r.value));
