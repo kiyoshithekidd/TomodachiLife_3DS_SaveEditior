@@ -46,7 +46,7 @@ If you have a modded 3DS and want to use the editor:
 
 #### Main Menu
 - **L / R**: Switch item/offset region profile (`US` / `EU`)
-- **Y**: Restore from `sdmc:/3ds/tlse/savedataArc.bak` (press twice to confirm)
+- **Y**: Restore from `sdmc:/3ds/tlse/backups/savedataArc.bak` (or use `Quick Extras` → `Restore Initial Clean Backup` for `savedataArc_initial.bak`)
 
 #### Money Editor
 - **A**: Add `+$100.00`
@@ -94,6 +94,15 @@ If you have a modded 3DS and want to use the editor:
 ---
 
 ## Changelog
+
+### v0.9.7 — Initial/Timestamped Backups & Building/Relationship Integrity (2026-11-23)
+- **Immutable Initial & Timestamped Session Backups (`#65`)**:
+  - `SafeFile::ensureBackupBeforeWrite()` now preserves a one-time **`savedataArc_initial.bak`** (written only if it doesn't already exist) and a timestamped **`savedataArc_YYYYMMDD_HHMMSS.bak`** per session in `sdmc:/3ds/tlse/backups/` alongside `savedataArc.bak`.
+  - Added **Restore Initial Clean Backup (.bak)** to **Quick Extras & Save Repair** so you can always revert to your original pre-edit save even after multiple sessions.
+- **Fixed Building/Ranking & Relationship Corruption Vectors (`#66`)**:
+  - Clamped all 24 building states and 10 ranking board states in `writeIslandConfig()` and `unlockAllBuildingsAndRankings()` to `0..2` (fixing out-of-range `6` / `3` writes to Mii Apartments `0x1E4C20` and Town Hall `0x1E4C21`).
+  - Merged `Lover` (`2, 10`) and `Spouse` (`4, 5, 11`) into the same romantic exclusivity category in `isExclusiveRole()` so a Mii cannot hold both simultaneously.
+  - Updated `writeRelationshipPair()` to assign an unused Mii Home (`1..49`) when setting `Spouse` on partners that both start at `0`.
 
 ### v0.9.6 — Deep Save Corruption Sweep & 60 FPS Food/Inventory Caching (2026-11-21)
 - **Fixed 6 Save Corruption Vectors (`#63`)**:
