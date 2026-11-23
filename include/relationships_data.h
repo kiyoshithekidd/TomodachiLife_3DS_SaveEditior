@@ -58,11 +58,12 @@ static inline void readRelationshipPair(SafeFile* file, SaveRegion reg, int miiA
 
 static inline bool isExclusiveRole(u8 relType, int* outCategory) {
     // Category 1 = Best Friend (12)
-    // Category 2 = Lover (2, 10)
-    // Category 3 = Spouse (4, 5, 11)
+    // Category 2 = Romantic Partner: Lover (2, 10) or Spouse (4, 5, 11) — mutually exclusive
     if (relType == 12) { if (outCategory) *outCategory = 1; return true; }
-    if (relType == 2 || relType == 10) { if (outCategory) *outCategory = 2; return true; }
-    if (relType == 4 || relType == 5 || relType == 11) { if (outCategory) *outCategory = 3; return true; }
+    if (relType == 2 || relType == 10 || relType == 4 || relType == 5 || relType == 11) {
+        if (outCategory) *outCategory = 2;
+        return true;
+    }
     return false;
 }
 
@@ -106,17 +107,36 @@ static inline void writeRelationshipPair(SafeFile* file, SafeArchive* archive, S
     file->write(getRelTypeOffset(reg, miiA, miiB), &rType, 1, &bw);
     file->write(getRelTypeOffset(reg, miiB, miiA), &rType, 1, &bw);
 
-    // 4. Sync Mii Home ID if Married (Spouse = 4/5/11) and one partner already owns a valid Mii Home (< 50)
+    // 4. Sync or assign a non-colliding Mii Home ID (1..49) if Married (Spouse = 4/5/11)
     if (rType == 4 || rType == 5 || rType == 11) {
-        u8 homeA = 0xFF, homeB = 0xFF;
+        u8 homeA = 0, homeB = 0;
         u32 br = 0;
         file->read(getMiiFieldOffset(reg, miiA, 0x22A9, 0x21A9), &homeA, 1, &br);
         file->read(getMiiFieldOffset(reg, miiB, 0x22A9, 0x21A9), &homeB, 1, &br);
-        if (homeA < 50 || homeB < 50) {
-            u8 sharedHome = (homeA < 50) ? homeA : homeB;
-            file->write(getMiiFieldOffset(reg, miiA, 0x22A9, 0x21A9), &sharedHome, 1, &bw);
-            file->write(getMiiFieldOffset(reg, miiB, 0x22A9, 0x21A9), &sharedHome, 1, &bw);
+        u8 sharedHome = 0;
+        if (homeA >= 1 && homeA < 50) {
+            sharedHome = homeA;
+        } else if (homeB >= 1 && homeB < 50) {
+            sharedHome = homeB;
+        } else {
+            bool usedHomes[50] = {false};
+            for (int k = 0; k < MAX_MIIS; k++) {
+                if (k == miiA || k == miiB) continue;
+                u8 rf = 0;
+                file->read(getMiiFieldOffset(reg, k, 0x22C8, 0x21C8), &rf, 1, &br);
+                if (rf == 1) {
+                    u8 kh = 0;
+                    file->read(getMiiFieldOffset(reg, k, 0x22A9, 0x21A9), &kh, 1, &br);
+                    if (kh >= 1 && kh < 50) usedHomes[kh] = true;
+                }
+            }
+            sharedHome = 1;
+            for (int h = 1; h < 50; h++) {
+                if (!usedHomes[h]) { sharedHome = (u8)h; break; }
+            }
         }
+        file->write(getMiiFieldOffset(reg, miiA, 0x22A9, 0x21A9), &sharedHome, 1, &bw);
+        file->write(getMiiFieldOffset(reg, miiB, 0x22A9, 0x21A9), &sharedHome, 1, &bw);
     }
 
     if (archive && archive->get() != 0) archive->commit();

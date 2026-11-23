@@ -71,10 +71,17 @@ static inline void readIslandConfig(SafeFile* file, SaveRegion reg, IslandConfig
 
 static inline void writeIslandConfig(SafeFile* file, SafeArchive* archive, SaveRegion reg, const IslandConfigData& in) {
     if (!file || !file->isOpen()) return;
+    IslandConfigData clamped = in;
+    for (int i = 0; i < 24; i++) {
+        if (clamped.buildings[i] > 2) clamped.buildings[i] = 2;
+    }
+    for (int i = 0; i < 10; i++) {
+        if (clamped.rankings[i] > 2) clamped.rankings[i] = 2;
+    }
     u32 bw = 0;
-    file->write(getBuildingsBaseOffset(reg), in.buildings, 24, &bw);
-    file->write(getRankingsBaseOffset(reg), in.rankings, 10, &bw);
-    file->write(getApartmentRenovOffset(reg), &in.apartmentRenov, 1, &bw);
+    file->write(getBuildingsBaseOffset(reg), clamped.buildings, 24, &bw);
+    file->write(getRankingsBaseOffset(reg), clamped.rankings, 10, &bw);
+    file->write(getApartmentRenovOffset(reg), &clamped.apartmentRenov, 1, &bw);
     if (archive && archive->get() != 0) archive->commit();
 }
 
@@ -82,12 +89,10 @@ static inline void unlockAllBuildingsAndRankings(SafeFile* file, SafeArchive* ar
     IslandConfigData cfg;
     readIslandConfig(file, reg, cfg);
     for (int i = 0; i < 24; i++) {
-        if (i == 0) cfg.buildings[i] = (cfg.buildings[i] < 6) ? 6 : cfg.buildings[i]; // Mii Apartments
-        else if (i == 1) cfg.buildings[i] = (cfg.buildings[i] < 3) ? 3 : cfg.buildings[i]; // Town Hall
-        else cfg.buildings[i] = (cfg.buildings[i] == 0) ? 2 : cfg.buildings[i];
+        if (cfg.buildings[i] == 0 || cfg.buildings[i] > 2) cfg.buildings[i] = 2;
     }
     for (int i = 0; i < 10; i++) {
-        if (cfg.rankings[i] == 0) cfg.rankings[i] = 2;
+        if (cfg.rankings[i] == 0 || cfg.rankings[i] > 2) cfg.rankings[i] = 2;
     }
     writeIslandConfig(file, archive, reg, cfg);
 }
