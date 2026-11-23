@@ -329,6 +329,13 @@ bool isMiiFieldOptional(int fieldIdx) {
     return (fieldIdx != 0 && fieldIdx != 2);
 }
 
+int getMaxQualifiedGiftSlots(const MiiEntry& m) {
+    int q = (int)m.level - 1;
+    if (q < 0) q = 0;
+    if (q > 8) q = 8;
+    return q;
+}
+
 void getMiiPickerSlotList(int fieldIdx, std::vector<u16>& outSlots, bool& outHasColors, CategoryInfo*& outCat) {
     outSlots.clear();
     outHasColors = false;
@@ -1446,22 +1453,36 @@ int main(int argc, char** argv) {
                 }
             }
             if (kDown & KEY_A) {
-                miiPickerField = cursorIndex;
-                int initCur = findMiiPickerInitialCursor(activeMii, miiPickerField);
-                std::vector<u16> slots; bool hc = false; CategoryInfo* cat = nullptr;
-                getMiiPickerSlotList(miiPickerField, slots, hc, cat);
-                int total = (int)slots.size();
-                cursorIndex = (initCur >= 0 && initCur < total) ? initCur : 0;
-                scrollOffset = (cursorIndex >= MAX_VISIBLE_ROWS) ? (cursorIndex - MAX_VISIBLE_ROWS / 2) : 0;
-                if (total > MAX_VISIBLE_ROWS && scrollOffset > total - MAX_VISIBLE_ROWS) {
-                    scrollOffset = total - MAX_VISIBLE_ROWS;
+                if (cursorIndex == 0 || cursorIndex == 1) {
+                    snprintf(statusToast, sizeof(statusToast), "Equipped Clothes/Hat locked (ID map pending)");
+                } else if (cursorIndex >= 10 && (cursorIndex - 10) >= getMaxQualifiedGiftSlots(activeMii)) {
+                    int reqLv = (cursorIndex - 10) + 2;
+                    snprintf(statusToast, sizeof(statusToast), "Requires Lv.%d+ for Gift #%d!", reqLv, cursorIndex - 9);
+                } else {
+                    miiPickerField = cursorIndex;
+                    int initCur = findMiiPickerInitialCursor(activeMii, miiPickerField);
+                    std::vector<u16> slots; bool hc = false; CategoryInfo* cat = nullptr;
+                    getMiiPickerSlotList(miiPickerField, slots, hc, cat);
+                    int total = (int)slots.size();
+                    cursorIndex = (initCur >= 0 && initCur < total) ? initCur : 0;
+                    scrollOffset = (cursorIndex >= MAX_VISIBLE_ROWS) ? (cursorIndex - MAX_VISIBLE_ROWS / 2) : 0;
+                    if (total > MAX_VISIBLE_ROWS && scrollOffset > total - MAX_VISIBLE_ROWS) {
+                        scrollOffset = total - MAX_VISIBLE_ROWS;
+                    }
+                    if (scrollOffset < 0) scrollOffset = 0;
+                    currentState = STATE_MII_ITEM_PICKER;
                 }
-                if (scrollOffset < 0) scrollOffset = 0;
-                currentState = STATE_MII_ITEM_PICKER;
             }
             int d = (kDown & KEY_RIGHT) ? 1 : ((kDown & KEY_LEFT) ? -1 : 0);
             if (d != 0) {
-                stepMiiEquipFoodValid(activeMii, cursorIndex, d);
+                if (cursorIndex == 0 || cursorIndex == 1) {
+                    snprintf(statusToast, sizeof(statusToast), "Equipped Clothes/Hat locked (ID map pending)");
+                } else if (cursorIndex >= 10 && (cursorIndex - 10) >= getMaxQualifiedGiftSlots(activeMii)) {
+                    int reqLv = (cursorIndex - 10) + 2;
+                    snprintf(statusToast, sizeof(statusToast), "Requires Lv.%d+ for Gift #%d!", reqLv, cursorIndex - 9);
+                } else {
+                    stepMiiEquipFoodValid(activeMii, cursorIndex, d);
+                }
             }
         }
         else if (currentState == STATE_MII_ITEM_PICKER) {
@@ -2000,9 +2021,13 @@ int main(int argc, char** argv) {
             };
             for (int i = 0; i < 10; i++) {
                 UIRow r; snprintf(r.label, sizeof(r.label), "%s", labels[i]); r.iconIdx = SPR_COUNT;
-                if (i == 0) formatClothesName(activeMii.equippedClothes, r.value, sizeof(r.value));
-                else if (i == 1) formatHatName(activeMii.equippedHat, r.value, sizeof(r.value));
-                else if (i == 2) formatInteriorName(activeMii.equippedInterior, r.value, sizeof(r.value));
+                if (i == 0) {
+                    if (activeMii.equippedClothes == 0xFFFF) snprintf(r.value, sizeof(r.value), "None (Locked)");
+                    else snprintf(r.value, sizeof(r.value), "ID #%u (Locked)", (unsigned)activeMii.equippedClothes);
+                } else if (i == 1) {
+                    if (activeMii.equippedHat == 0xFFFF) snprintf(r.value, sizeof(r.value), "None (Locked)");
+                    else snprintf(r.value, sizeof(r.value), "ID #%u (Locked)", (unsigned)activeMii.equippedHat);
+                } else if (i == 2) formatInteriorName(activeMii.equippedInterior, r.value, sizeof(r.value));
                 else if (i == 3) formatFoodName(activeMii.superFavFood, r.value, sizeof(r.value));
                 else if (i == 4) formatFoodName(activeMii.allTimeFavFood, r.value, sizeof(r.value));
                 else if (i == 5) formatFoodName(activeMii.favFood1, r.value, sizeof(r.value));
@@ -2012,14 +2037,19 @@ int main(int argc, char** argv) {
                 else formatFoodName(activeMii.worstEverFood, r.value, sizeof(r.value));
                 rows.push_back(r);
             }
+            int maxGifts = getMaxQualifiedGiftSlots(activeMii);
             for (int g = 0; g < 8; g++) {
                 UIRow rg;
                 snprintf(rg.label, sizeof(rg.label), "Level-Up Gift #%d", g + 1);
-                snprintf(rg.value, sizeof(rg.value), "%s", getLevelUpGiftName(activeMii.levelUpGifts[g]));
+                if (g >= maxGifts && activeMii.levelUpGifts[g] == 0xFFFF) {
+                    snprintf(rg.value, sizeof(rg.value), "Locked (Lv.%d+)", g + 2);
+                } else {
+                    snprintf(rg.value, sizeof(rg.value), "%s", getLevelUpGiftName(activeMii.levelUpGifts[g]));
+                }
                 rg.iconIdx = SPR_COUNT;
                 rows.push_back(rg);
             }
-            snprintf(bottomHint, sizeof(bottomHint), "[A] Full List   [Left/Right] +/-1   [Y] Clear\n[B] Save & Back");
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Full List   [Left/Right] +/-1   [Y] Clear\n[B] Save & Back  %s", statusToast);
         } else if (currentState == STATE_MII_ITEM_PICKER) {
             headerIcon = SPR_ICON_MII;
             static const char* FIELD_TITLES[10] = {
