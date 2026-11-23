@@ -140,6 +140,8 @@ enum MenuState {
     STATE_MII_PROFILE_EDIT,
     STATE_MII_VOICE_PERS,
     STATE_MII_GIFTS_FOODS,
+    STATE_MII_ITEM_PICKER,
+    STATE_MII_COLOR_PICKER,
     // Relationship Editor (#44)
     STATE_REL_MII_A,
     STATE_REL_MII_B,
@@ -300,6 +302,107 @@ CategoryInfo* getCategoryForState(MenuState state) {
         case STATE_CATEGORY_TREASURES: return &categories[5];
         default:                       return &categories[0];
     }
+}
+
+int miiPickerField = 0;
+int miiPickerSlot = 0;
+
+u16* getMiiEquipFoodFieldPtr(MiiEntry& m, int fieldIdx) {
+    switch (fieldIdx) {
+        case 0:  return &m.equippedClothes;
+        case 1:  return &m.equippedHat;
+        case 2:  return &m.equippedInterior;
+        case 3:  return &m.superFavFood;
+        case 4:  return &m.allTimeFavFood;
+        case 5:  return &m.favFood1;
+        case 6:  return &m.favFood2;
+        case 7:  return &m.favFood3;
+        case 8:  return &m.worstFood;
+        case 9:  return &m.worstEverFood;
+        default:
+            if (fieldIdx >= 10 && fieldIdx < 18) return &m.levelUpGifts[fieldIdx - 10];
+            return &m.equippedClothes;
+    }
+}
+
+bool isMiiFieldOptional(int fieldIdx) {
+    return (fieldIdx != 0 && fieldIdx != 2);
+}
+
+void getMiiPickerSlotList(int fieldIdx, std::vector<u16>& outSlots, bool& outHasColors, CategoryInfo*& outCat) {
+    outSlots.clear();
+    outHasColors = false;
+    outCat = nullptr;
+    if (isMiiFieldOptional(fieldIdx)) outSlots.push_back(0xFFFF);
+    if (fieldIdx == 0 || fieldIdx == 1) {
+        outHasColors = true;
+        outCat = (fieldIdx == 0) ? &categories[1] : &categories[2];
+        for (size_t i = 0; i < outCat->filteredIndices.size(); i++) {
+            outSlots.push_back((u16)outCat->filteredIndices[i]);
+        }
+    } else if (fieldIdx == 2) {
+        outCat = &categories[3];
+        for (size_t i = 0; i < outCat->filteredIndices.size(); i++) {
+            outSlots.push_back((u16)outCat->filteredIndices[i]);
+        }
+    } else if (fieldIdx >= 3 && fieldIdx <= 9) {
+        outCat = &categories[0];
+        for (size_t i = 0; i < outCat->filteredIndices.size(); i++) {
+            outSlots.push_back((u16)outCat->filteredIndices[i]);
+        }
+    } else if (fieldIdx >= 10 && fieldIdx < 18) {
+        for (u16 g = 0; g < 28; g++) outSlots.push_back(g);
+    }
+}
+
+void stepMiiEquipFoodValid(MiiEntry& m, int fieldIdx, int delta) {
+    if (delta == 0) return;
+    u16* ptr = getMiiEquipFoodFieldPtr(m, fieldIdx);
+    std::vector<u16> slots;
+    bool hasColors = false;
+    CategoryInfo* cat = nullptr;
+    getMiiPickerSlotList(fieldIdx, slots, hasColors, cat);
+
+    std::vector<u16> validIds;
+    validIds.reserve(hasColors ? slots.size() * 8 : slots.size());
+    for (size_t i = 0; i < slots.size(); i++) {
+        u16 s = slots[i];
+        if (s == 0xFFFF || !hasColors) {
+            validIds.push_back(s);
+        } else {
+            int vc = getValidColorCount(cat, (int)s);
+            for (int c = 0; c < vc; c++) {
+                validIds.push_back((u16)(s * 8 + c));
+            }
+        }
+    }
+    if (validIds.empty()) return;
+
+    int found = -1;
+    for (size_t i = 0; i < validIds.size(); i++) {
+        if (validIds[i] == *ptr) { found = (int)i; break; }
+    }
+    int n = (int)validIds.size();
+    if (found < 0) {
+        *ptr = (delta > 0) ? validIds[0] : validIds[n - 1];
+    } else {
+        int next = (found + delta) % n;
+        if (next < 0) next += n;
+        *ptr = validIds[next];
+    }
+}
+
+int findMiiPickerInitialCursor(const MiiEntry& m, int fieldIdx) {
+    u16 cur = *getMiiEquipFoodFieldPtr(const_cast<MiiEntry&>(m), fieldIdx);
+    std::vector<u16> slots;
+    bool hasColors = false;
+    CategoryInfo* cat = nullptr;
+    getMiiPickerSlotList(fieldIdx, slots, hasColors, cat);
+    u16 targetSlot = (hasColors && cur != 0xFFFF) ? (u16)(cur / 8) : cur;
+    for (size_t i = 0; i < slots.size(); i++) {
+        if (slots[i] == targetSlot) return (int)i;
+    }
+    return 0;
 }
 
 const char* getTitleForState(MenuState state) {
@@ -1337,44 +1440,96 @@ int main(int argc, char** argv) {
                 writeMiiEntry(file.get(), archive.get(), currentRegion, activeMii);
                 currentState = STATE_MII_SUBMENU; cursorIndex = 3; scrollOffset = 0;
             }
-            auto stepOptionalU16 = [](u16& val, int delta, int maxId, bool allowNone) {
-                if (val == 0xFFFF) {
-                    if (delta > 0) val = 0;
-                    else if (delta < 0) val = (u16)maxId;
-                    return;
-                }
-                int nv = (int)val + delta;
-                if (nv < 0) val = allowNone ? 0xFFFF : 0;
-                else if (nv > maxId) val = allowNone ? 0xFFFF : (u16)maxId;
-                else val = (u16)nv;
-            };
             if (kDown & KEY_Y) {
-                if (cursorIndex == 1) activeMii.equippedHat = 0xFFFF;
-                else if (cursorIndex == 3) activeMii.superFavFood = 0xFFFF;
-                else if (cursorIndex == 4) activeMii.allTimeFavFood = 0xFFFF;
-                else if (cursorIndex == 5) activeMii.favFood1 = 0xFFFF;
-                else if (cursorIndex == 6) activeMii.favFood2 = 0xFFFF;
-                else if (cursorIndex == 7) activeMii.favFood3 = 0xFFFF;
-                else if (cursorIndex == 8) activeMii.worstFood = 0xFFFF;
-                else if (cursorIndex == 9) activeMii.worstEverFood = 0xFFFF;
-                else if (cursorIndex >= 10 && cursorIndex < 18) activeMii.levelUpGifts[cursorIndex - 10] = 0xFFFF;
-            }
-            int d = (kDown & KEY_RIGHT) ? 1 : ((kDown & KEY_LEFT) ? -1 : ((kDown & KEY_A) ? 10 : 0));
-            if (d != 0) {
-                if (cursorIndex == 0) stepOptionalU16(activeMii.equippedClothes, d, 447 * 8 - 1, false);
-                else if (cursorIndex == 1) stepOptionalU16(activeMii.equippedHat, d, 219 * 8 - 1, true);
-                else if (cursorIndex == 2) stepOptionalU16(activeMii.equippedInterior, d, INTERIORS_COUNT - 1, false);
-                else if (cursorIndex == 3) stepOptionalU16(activeMii.superFavFood, d, FOOD_COUNT - 1, true);
-                else if (cursorIndex == 4) stepOptionalU16(activeMii.allTimeFavFood, d, FOOD_COUNT - 1, true);
-                else if (cursorIndex == 5) stepOptionalU16(activeMii.favFood1, d, FOOD_COUNT - 1, true);
-                else if (cursorIndex == 6) stepOptionalU16(activeMii.favFood2, d, FOOD_COUNT - 1, true);
-                else if (cursorIndex == 7) stepOptionalU16(activeMii.favFood3, d, FOOD_COUNT - 1, true);
-                else if (cursorIndex == 8) stepOptionalU16(activeMii.worstFood, d, FOOD_COUNT - 1, true);
-                else if (cursorIndex == 9) stepOptionalU16(activeMii.worstEverFood, d, FOOD_COUNT - 1, true);
-                else if (cursorIndex >= 10 && cursorIndex < 18) {
-                    int gd = (kDown & KEY_RIGHT) ? 1 : ((kDown & KEY_LEFT) ? -1 : 1);
-                    stepOptionalU16(activeMii.levelUpGifts[cursorIndex - 10], gd, 27, true);
+                if (isMiiFieldOptional(cursorIndex)) {
+                    *getMiiEquipFoodFieldPtr(activeMii, cursorIndex) = 0xFFFF;
                 }
+            }
+            if (kDown & KEY_A) {
+                miiPickerField = cursorIndex;
+                int initCur = findMiiPickerInitialCursor(activeMii, miiPickerField);
+                std::vector<u16> slots; bool hc = false; CategoryInfo* cat = nullptr;
+                getMiiPickerSlotList(miiPickerField, slots, hc, cat);
+                int total = (int)slots.size();
+                cursorIndex = (initCur >= 0 && initCur < total) ? initCur : 0;
+                scrollOffset = (cursorIndex >= MAX_VISIBLE_ROWS) ? (cursorIndex - MAX_VISIBLE_ROWS / 2) : 0;
+                if (total > MAX_VISIBLE_ROWS && scrollOffset > total - MAX_VISIBLE_ROWS) {
+                    scrollOffset = total - MAX_VISIBLE_ROWS;
+                }
+                if (scrollOffset < 0) scrollOffset = 0;
+                currentState = STATE_MII_ITEM_PICKER;
+            }
+            int d = (kDown & KEY_RIGHT) ? 1 : ((kDown & KEY_LEFT) ? -1 : 0);
+            if (d != 0) {
+                stepMiiEquipFoodValid(activeMii, cursorIndex, d);
+            }
+        }
+        else if (currentState == STATE_MII_ITEM_PICKER) {
+            std::vector<u16> slots; bool hasColors = false; CategoryInfo* cat = nullptr;
+            getMiiPickerSlotList(miiPickerField, slots, hasColors, cat);
+            int total = (int)slots.size();
+            adjustListNav(kDown, total);
+            if (total > 0) {
+                if (kDown & KEY_L) {
+                    cursorIndex -= 10;
+                    if (cursorIndex < 0) cursorIndex = 0;
+                    if (cursorIndex < scrollOffset) scrollOffset = cursorIndex;
+                }
+                if (kDown & KEY_R) {
+                    cursorIndex += 10;
+                    if (cursorIndex >= total) cursorIndex = total - 1;
+                    if (cursorIndex >= scrollOffset + MAX_VISIBLE_ROWS) scrollOffset = cursorIndex - MAX_VISIBLE_ROWS + 1;
+                }
+            }
+            if (kDown & KEY_B) {
+                currentState = STATE_MII_GIFTS_FOODS;
+                cursorIndex = miiPickerField;
+                scrollOffset = (cursorIndex >= MAX_VISIBLE_ROWS) ? (cursorIndex - MAX_VISIBLE_ROWS + 1) : 0;
+            }
+            if ((kDown & KEY_A) && total > 0 && cursorIndex < total) {
+                u16 chosen = slots[cursorIndex];
+                if (chosen == 0xFFFF || !hasColors) {
+                    *getMiiEquipFoodFieldPtr(activeMii, miiPickerField) = chosen;
+                    currentState = STATE_MII_GIFTS_FOODS;
+                    cursorIndex = miiPickerField;
+                    scrollOffset = (cursorIndex >= MAX_VISIBLE_ROWS) ? (cursorIndex - MAX_VISIBLE_ROWS + 1) : 0;
+                } else {
+                    miiPickerSlot = (int)chosen;
+                    u16 cur = *getMiiEquipFoodFieldPtr(activeMii, miiPickerField);
+                    int vc = getValidColorCount(cat, miiPickerSlot);
+                    int initCol = (cur != 0xFFFF && (int)(cur / 8) == miiPickerSlot) ? (int)(cur % 8) : 0;
+                    cursorIndex = (initCol >= 0 && initCol < vc) ? initCol : 0;
+                    scrollOffset = 0;
+                    currentState = STATE_MII_COLOR_PICKER;
+                }
+            }
+        }
+        else if (currentState == STATE_MII_COLOR_PICKER) {
+            CategoryInfo* cat = (miiPickerField == 0) ? &categories[1] : &categories[2];
+            int validColors = getValidColorCount(cat, miiPickerSlot);
+            adjustListNav(kDown, validColors);
+            if (kDown & KEY_B) {
+                int initCur = findMiiPickerInitialCursor(activeMii, miiPickerField);
+                std::vector<u16> slots; bool hc = false; CategoryInfo* c2 = nullptr;
+                getMiiPickerSlotList(miiPickerField, slots, hc, c2);
+                int total = (int)slots.size();
+                cursorIndex = 0;
+                for (int i = 0; i < total; i++) {
+                    if (slots[i] == (u16)miiPickerSlot) { cursorIndex = i; break; }
+                }
+                if (cursorIndex == 0 && initCur >= 0 && initCur < total) cursorIndex = initCur;
+                scrollOffset = (cursorIndex >= MAX_VISIBLE_ROWS) ? (cursorIndex - MAX_VISIBLE_ROWS / 2) : 0;
+                if (total > MAX_VISIBLE_ROWS && scrollOffset > total - MAX_VISIBLE_ROWS) {
+                    scrollOffset = total - MAX_VISIBLE_ROWS;
+                }
+                if (scrollOffset < 0) scrollOffset = 0;
+                currentState = STATE_MII_ITEM_PICKER;
+            }
+            if ((kDown & KEY_A) && validColors > 0) {
+                *getMiiEquipFoodFieldPtr(activeMii, miiPickerField) = (u16)(miiPickerSlot * 8 + cursorIndex);
+                currentState = STATE_MII_GIFTS_FOODS;
+                cursorIndex = miiPickerField;
+                scrollOffset = (cursorIndex >= MAX_VISIBLE_ROWS) ? (cursorIndex - MAX_VISIBLE_ROWS + 1) : 0;
             }
         }
         // ── Relationship Editor (#44) ────────────────────────────────
@@ -1864,7 +2019,67 @@ int main(int argc, char** argv) {
                 rg.iconIdx = SPR_COUNT;
                 rows.push_back(rg);
             }
-            snprintf(bottomHint, sizeof(bottomHint), "[Left/Right] +/-1   [A] +10   [Y] Clear (None)\n[B] Save & Back");
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Full List   [Left/Right] +/-1   [Y] Clear\n[B] Save & Back");
+        } else if (currentState == STATE_MII_ITEM_PICKER) {
+            headerIcon = SPR_ICON_MII;
+            static const char* FIELD_TITLES[10] = {
+                "Pick Clothes", "Pick Hat", "Pick Interior",
+                "Pick Super All-Time Fav", "Pick All-Time Fav", "Pick Favorite #1",
+                "Pick Favorite #2", "Pick Favorite #3", "Pick Worst Food", "Pick Worst Ever"
+            };
+            if (miiPickerField >= 0 && miiPickerField < 10) {
+                snprintf(headerTitle, sizeof(headerTitle), "%s (%s)", FIELD_TITLES[miiPickerField], activeMii.nickname);
+            } else {
+                snprintf(headerTitle, sizeof(headerTitle), "Pick Gift #%d (%s)", miiPickerField - 9, activeMii.nickname);
+            }
+            std::vector<u16> slots; bool hasColors = false; CategoryInfo* cat = nullptr;
+            getMiiPickerSlotList(miiPickerField, slots, hasColors, cat);
+            u16 curVal = *getMiiEquipFoodFieldPtr(activeMii, miiPickerField);
+            u16 curSlot = (hasColors && curVal != 0xFFFF) ? (u16)(curVal / 8) : curVal;
+            for (size_t i = 0; i < slots.size(); i++) {
+                u16 s = slots[i];
+                UIRow r; r.iconIdx = SPR_COUNT;
+                if (s == 0xFFFF) {
+                    snprintf(r.label, sizeof(r.label), "None");
+                } else if (miiPickerField == 0 || miiPickerField == 1) {
+                    strncpy(r.label, cat->names[s + cat->nameOffset], sizeof(r.label) - 1);
+                    r.label[sizeof(r.label) - 1] = '\0';
+                    capitalizeString(r.label);
+                } else if (miiPickerField == 2) {
+                    formatInteriorName(s, r.label, sizeof(r.label));
+                } else if (miiPickerField >= 3 && miiPickerField <= 9) {
+                    formatFoodName(s, r.label, sizeof(r.label));
+                } else {
+                    snprintf(r.label, sizeof(r.label), "%s", getLevelUpGiftName(s));
+                }
+                if (s == curSlot) snprintf(r.value, sizeof(r.value), "Current");
+                else if (hasColors && s != 0xFFFF) snprintf(r.value, sizeof(r.value), "%d col", getValidColorCount(cat, (int)s));
+                else r.value[0] = '\0';
+                rows.push_back(r);
+            }
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Select   [L/R] Page +/-10   [B] Back");
+        } else if (currentState == STATE_MII_COLOR_PICKER) {
+            headerIcon = SPR_ICON_MII;
+            CategoryInfo* cat = (miiPickerField == 0) ? &categories[1] : &categories[2];
+            int validColors = getValidColorCount(cat, miiPickerSlot);
+            char itemName[48];
+            strncpy(itemName, cat->names[miiPickerSlot + cat->nameOffset], sizeof(itemName) - 1);
+            itemName[sizeof(itemName) - 1] = '\0';
+            capitalizeString(itemName);
+            snprintf(headerTitle, sizeof(headerTitle), "%.24s — Color", itemName);
+            u16 curVal = *getMiiEquipFoodFieldPtr(activeMii, miiPickerField);
+            for (int c = 0; c < validColors; c++) {
+                UIRow r;
+                snprintf(r.label, sizeof(r.label), "Color %d", c + 1);
+                if (curVal != 0xFFFF && (int)(curVal / 8) == miiPickerSlot && (int)(curVal % 8) == c) {
+                    snprintf(r.value, sizeof(r.value), "Current");
+                } else {
+                    r.value[0] = '\0';
+                }
+                r.iconIdx = SPR_COUNT;
+                rows.push_back(r);
+            }
+            snprintf(bottomHint, sizeof(bottomHint), "[A] Equip Color   [B] Back");
         } else if (currentState == STATE_REL_MII_A || currentState == STATE_REL_MII_B) {
             headerIcon = SPR_ICON_RELATIONSHIPS;
             snprintf(headerTitle, sizeof(headerTitle),
@@ -2129,14 +2344,15 @@ int main(int argc, char** argv) {
             }
 
             // Color swatch preview on Color Select screen
-            if (currentState == STATE_COLOR_SELECT) {
+            if (currentState == STATE_COLOR_SELECT || currentState == STATE_MII_COLOR_PICKER) {
                 static const u32 swatchColors[8] = {
                     C2D_Color32(239, 83, 80, 255),   C2D_Color32(66, 165, 245, 255),
                     C2D_Color32(102, 187, 106, 255), C2D_Color32(255, 213, 79, 255),
                     C2D_Color32(171, 71, 188, 255),  C2D_Color32(255, 167, 38, 255),
                     C2D_Color32(141, 110, 99, 255),  C2D_Color32(96, 125, 139, 255)
                 };
-                for (int c = 0; c < (int)rows.size() - 1 && c < 8; c++) {
+                int swatchCount = (currentState == STATE_COLOR_SELECT) ? ((int)rows.size() - 1) : (int)rows.size();
+                for (int c = 0; c < swatchCount && c < 8; c++) {
                     C2D_ImageTint tint;
                     C2D_PlainImageTint(&tint, swatchColors[c], 0.85f);
                     drawSprite(spriteSheet, SPR_COLOR_SWATCH_RING, 354.0f, 60.0f + (c * 21.0f), 0.9f, 0.9f, &tint);
