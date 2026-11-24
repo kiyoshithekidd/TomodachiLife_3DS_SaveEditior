@@ -95,6 +95,16 @@ If you have a modded 3DS and want to use the editor:
 
 ## Changelog
 
+### v1.0.3 — Equipped Clothes, Hat & Interior Mapping + Shop Alignment (2026-11-23)
+- **Unlocked Equipped Clothes, Hat & Interior Editing (`#68`, `#70`, `#71`)**:
+  - Replaced legacy `slot * 8 + color` math with hardware-verified packed-slot ↔ raw MSBT ID tables (`include/item_mapping.h`) covering all **447 Clothes** (`0x1D42`), **237 Hats** (`0x1D44`, plus `0xFFFF` = None), and **102 Shop + 8 Starter Interiors** (`0x1F20`).
+  - Added read-modify-write decoding/encoding for **Equipped Clothes & Hat Color Bitfields** (`0x1D11..0x1D12` US/EU/KR, `0x1CE1..0x1CE2` JP), preserving all unrelated bits.
+  - Guarded equipped writes with per-field dirty flags (`equippedClothesDirty`, `equippedHatDirty`, `equippedInteriorDirty`) and automatically unlocked the equipped item/color in the Mii's personal wardrobe (`0x1F70` Clothes, `0x2168` Hats, `0x1F59` Interiors on US/EU) to prevent in-game wardrobe desyncs.
+  - Updated **Mii → Equipped, Gifts & Foods** and the scrollable item/color pickers to display real item names and color variants (`Item Name (C1..C8)`).
+- **Shop Inventory Name Alignment & Color Count Fix (`#69`, `#70`)**:
+  - Aligned the **Clothes** (`447` slots), **Hats** (`219` shop slots starting at `0x0FF8` = packed slot `1`), and **Interiors** (`102` slots, removing `Unknown_108`) shop tables to exact regional packed slots with zero `Unknown_Item_*` entries.
+  - Fixed `spring dress` (`slot 190`) valid color count from `8` to `6`.
+
 ### v1.0.2 — Equipped Interior Safety Lock (2026-11-23)
 - **Equipped Interior Safety Lock (`#70`, `#71`)**:
   - Locked **Equipped Interior** (`0x1F20`) in **Mii → Equipped, Gifts & Foods** as read-only (`ID #... (Locked)`), matching **Equipped Clothes** and **Equipped Hat** while the packed/RomFS ID tables are mapped.

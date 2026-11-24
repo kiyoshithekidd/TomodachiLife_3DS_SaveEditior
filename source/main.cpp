@@ -46,53 +46,52 @@ void formatFoodName(u16 id, char* out, size_t outSz) {
     }
 }
 
-void formatClothesName(u16 id, char* out, size_t outSz) {
-    if (id == 0xFFFF) {
+void formatClothesName(u16 msbtId, u8 colorIdx, char* out, size_t outSz) {
+    if (msbtId == 0xFFFF) {
         snprintf(out, outSz, "None");
         return;
     }
-    int slot = (int)(id / 8);
-    int col = (int)(id % 8) + 1;
-    if (slot >= 0 && slot < 447 && (990 + slot) < CLOTHES_COUNT) {
+    const char* raw = getClothesNameByMsbt(msbtId);
+    if (raw != nullptr && strstr(raw, "Unknown") == nullptr) {
         char base[40];
-        strncpy(base, CLOTHES_NAMES[990 + slot], sizeof(base) - 1);
+        strncpy(base, raw, sizeof(base) - 1);
         base[sizeof(base) - 1] = '\0';
         capitalizeString(base);
-        snprintf(out, outSz, "%.22s (C%d)", base, col);
+        snprintf(out, outSz, "%.22s (C%u)", base, (unsigned)((colorIdx & 0x07) + 1));
     } else {
-        snprintf(out, outSz, "Clothes #%u", (unsigned)id);
+        snprintf(out, outSz, "Clothes #%u (C%u)", (unsigned)msbtId, (unsigned)((colorIdx & 0x07) + 1));
     }
 }
 
-void formatHatName(u16 id, char* out, size_t outSz) {
-    if (id == 0xFFFF) {
+void formatHatName(u16 msbtId, u8 colorIdx, char* out, size_t outSz) {
+    if (msbtId == 0xFFFF) {
         snprintf(out, outSz, "None");
         return;
     }
-    int slot = (int)(id / 8);
-    int col = (int)(id % 8) + 1;
-    if (slot >= 0 && slot < 219 && (2606 + slot) < CLOTHES_COUNT) {
+    const char* raw = getHatNameByMsbt(msbtId);
+    if (raw != nullptr && strstr(raw, "Unknown") == nullptr) {
         char base[40];
-        strncpy(base, CLOTHES_NAMES[2606 + slot], sizeof(base) - 1);
+        strncpy(base, raw, sizeof(base) - 1);
         base[sizeof(base) - 1] = '\0';
         capitalizeString(base);
-        snprintf(out, outSz, "%.22s (C%d)", base, col);
+        snprintf(out, outSz, "%.22s (C%u)", base, (unsigned)((colorIdx & 0x07) + 1));
     } else {
-        snprintf(out, outSz, "Hat #%u", (unsigned)id);
+        snprintf(out, outSz, "Hat #%u (C%u)", (unsigned)msbtId, (unsigned)((colorIdx & 0x07) + 1));
     }
 }
 
-void formatInteriorName(u16 id, char* out, size_t outSz) {
-    if (id == 0xFFFF) {
+void formatInteriorName(u16 msbtId, char* out, size_t outSz) {
+    if (msbtId == 0xFFFF) {
         snprintf(out, outSz, "None");
         return;
     }
-    if ((int)id < INTERIORS_COUNT) {
-        strncpy(out, INTERIORS_NAMES[id], outSz - 1);
+    const char* raw = getInteriorNameByMsbt(msbtId);
+    if (raw != nullptr && strstr(raw, "Unknown") == nullptr) {
+        strncpy(out, raw, outSz - 1);
         out[outSz - 1] = '\0';
         capitalizeString(out);
     } else {
-        snprintf(out, outSz, "Interior #%u", (unsigned)id);
+        snprintf(out, outSz, "Interior #%u", (unsigned)msbtId);
     }
 }
 
@@ -167,7 +166,7 @@ enum MenuState {
 SaveRegion currentRegion = REGION_US;
 
 struct CategoryInfo {
-    const char** names;
+    const char* const* names;
     int nameCount;
     int nameOffset;
     u32 saveBase;
@@ -187,7 +186,7 @@ const u8 CLOTHES_COLOR_COUNTS_US[447] = {
     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 5, 8, 8,
     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
-    8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+    8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 6, 8,
     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
     6, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
@@ -262,7 +261,7 @@ int getValidColorCount(const CategoryInfo* cat, int originalIdx) {
     return cat->bytesPerItem;
 }
 
-void initCategory(CategoryInfo& cat, const char** names, int count, int offset, int maxItems,
+void initCategory(CategoryInfo& cat, const char* const* names, int count, int offset, int maxItems,
                   u32 saveBase, int bytesPerItem, bool hasColors, bool needsFiltering,
                   const u8* colorCounts = NULL) {
     cat.names = names;
@@ -336,21 +335,57 @@ int getMaxQualifiedGiftSlots(const MiiEntry& m) {
     return q;
 }
 
+int getValidColorCountForMsbt(int fieldIdx, u16 msbtId) {
+    if (fieldIdx == 0) {
+        int packed = clothesMsbtToPackedSlot(msbtId);
+        if (packed >= 0 && packed < CLOTHES_PACKED_COUNT) {
+            return getValidColorCount(&categories[1], packed);
+        }
+        return 1;
+    }
+    if (fieldIdx == 1) {
+        int packed = hatMsbtToPackedSlot(msbtId);
+        int shopSlot = packed - 1; // 0x0FF8 starts at packed slot 1
+        if (shopSlot >= 0 && shopSlot < HATS_SHOP_COUNT) {
+            int vc = getValidColorCount(&categories[2], shopSlot);
+            return (vc > 0) ? vc : 1;
+        }
+        return 1;
+    }
+    return 1;
+}
+
 void getMiiPickerSlotList(int fieldIdx, std::vector<u16>& outSlots, bool& outHasColors, CategoryInfo*& outCat) {
     outSlots.clear();
     outHasColors = false;
     outCat = nullptr;
     if (isMiiFieldOptional(fieldIdx)) outSlots.push_back(0xFFFF);
-    if (fieldIdx == 0 || fieldIdx == 1) {
+    if (fieldIdx == 0) {
         outHasColors = true;
-        outCat = (fieldIdx == 0) ? &categories[1] : &categories[2];
+        outCat = &categories[1];
         for (size_t i = 0; i < outCat->filteredIndices.size(); i++) {
-            outSlots.push_back((u16)outCat->filteredIndices[i]);
+            int packed = outCat->filteredIndices[i];
+            if (packed >= 0 && packed < CLOTHES_PACKED_COUNT) {
+                outSlots.push_back(CLOTHES_PACKED_TO_MSBT_US[packed]);
+            }
+        }
+    } else if (fieldIdx == 1) {
+        outHasColors = true;
+        outCat = &categories[2];
+        for (size_t i = 0; i < outCat->filteredIndices.size(); i++) {
+            int shopSlot = outCat->filteredIndices[i];
+            int packed = shopSlot + 1;
+            if (packed >= 0 && packed < HATS_PACKED_COUNT) {
+                outSlots.push_back(HATS_PACKED_TO_MSBT_US[packed]);
+            }
         }
     } else if (fieldIdx == 2) {
         outCat = &categories[3];
         for (size_t i = 0; i < outCat->filteredIndices.size(); i++) {
-            outSlots.push_back((u16)outCat->filteredIndices[i]);
+            int packed = outCat->filteredIndices[i];
+            if (packed >= 0 && packed < INTERIORS_PACKED_COUNT) {
+                outSlots.push_back(INTERIORS_PACKED_TO_MSBT_US[packed]);
+            }
         }
     } else if (fieldIdx >= 3 && fieldIdx <= 9) {
         outCat = &categories[0];
@@ -369,34 +404,53 @@ void stepMiiEquipFoodValid(MiiEntry& m, int fieldIdx, int delta) {
     bool hasColors = false;
     CategoryInfo* cat = nullptr;
     getMiiPickerSlotList(fieldIdx, slots, hasColors, cat);
+    if (slots.empty()) return;
 
-    std::vector<u16> validIds;
-    validIds.reserve(hasColors ? slots.size() * 8 : slots.size());
-    for (size_t i = 0; i < slots.size(); i++) {
-        u16 s = slots[i];
-        if (s == 0xFFFF || !hasColors) {
-            validIds.push_back(s);
-        } else {
-            int vc = getValidColorCount(cat, (int)s);
-            for (int c = 0; c < vc; c++) {
-                validIds.push_back((u16)(s * 8 + c));
+    if (fieldIdx == 0 || fieldIdx == 1) {
+        struct IdColor { u16 id; u8 col; };
+        std::vector<IdColor> valid;
+        valid.reserve(slots.size() * 8);
+        for (size_t i = 0; i < slots.size(); i++) {
+            u16 s = slots[i];
+            if (s == 0xFFFF) {
+                valid.push_back({0xFFFF, 0});
+            } else {
+                int vc = getValidColorCountForMsbt(fieldIdx, s);
+                for (int c = 0; c < vc; c++) valid.push_back({s, (u8)c});
             }
         }
+        if (valid.empty()) return;
+        u8 curCol = (fieldIdx == 0) ? m.equippedClothesColor : m.equippedHatColor;
+        int found = -1;
+        for (size_t i = 0; i < valid.size(); i++) {
+            if (valid[i].id == *ptr && (valid[i].id == 0xFFFF || valid[i].col == curCol)) {
+                found = (int)i;
+                break;
+            }
+        }
+        int n = (int)valid.size();
+        int next = (found < 0) ? ((delta > 0) ? 0 : (n - 1)) : ((found + delta) % n);
+        if (next < 0) next += n;
+        *ptr = valid[next].id;
+        if (fieldIdx == 0) {
+            m.equippedClothesColor = valid[next].col;
+            m.equippedClothesDirty = true;
+        } else {
+            m.equippedHatColor = valid[next].col;
+            m.equippedHatDirty = true;
+        }
+        return;
     }
-    if (validIds.empty()) return;
 
     int found = -1;
-    for (size_t i = 0; i < validIds.size(); i++) {
-        if (validIds[i] == *ptr) { found = (int)i; break; }
+    for (size_t i = 0; i < slots.size(); i++) {
+        if (slots[i] == *ptr) { found = (int)i; break; }
     }
-    int n = (int)validIds.size();
-    if (found < 0) {
-        *ptr = (delta > 0) ? validIds[0] : validIds[n - 1];
-    } else {
-        int next = (found + delta) % n;
-        if (next < 0) next += n;
-        *ptr = validIds[next];
-    }
+    int n = (int)slots.size();
+    int next = (found < 0) ? ((delta > 0) ? 0 : (n - 1)) : ((found + delta) % n);
+    if (next < 0) next += n;
+    *ptr = slots[next];
+    if (fieldIdx == 2) m.equippedInteriorDirty = true;
 }
 
 int findMiiPickerInitialCursor(const MiiEntry& m, int fieldIdx) {
@@ -405,9 +459,8 @@ int findMiiPickerInitialCursor(const MiiEntry& m, int fieldIdx) {
     bool hasColors = false;
     CategoryInfo* cat = nullptr;
     getMiiPickerSlotList(fieldIdx, slots, hasColors, cat);
-    u16 targetSlot = (hasColors && cur != 0xFFFF) ? (u16)(cur / 8) : cur;
     for (size_t i = 0; i < slots.size(); i++) {
-        if (slots[i] == targetSlot) return (int)i;
+        if (slots[i] == cur) return (int)i;
     }
     return 0;
 }
@@ -951,8 +1004,8 @@ int main(int argc, char** argv) {
 
     // ── Initialize categories ────────────────────────────────────────
     initCategory(categories[0], FOOD_NAMES, FOOD_COUNT, 0, FOOD_COUNT, 0x17F0, 1, false, false);
-    initCategory(categories[1], CLOTHES_NAMES, CLOTHES_COUNT, 990, 447, 0x30, 8, true, true, CLOTHES_COLOR_COUNTS_US);
-    initCategory(categories[2], CLOTHES_NAMES, CLOTHES_COUNT, 2606, 219, 0xFF8, 8, true, true, HATS_COLOR_COUNTS_US);
+    initCategory(categories[1], CLOTHES_SHOP_NAMES_US, CLOTHES_PACKED_COUNT, 0, CLOTHES_PACKED_COUNT, 0x30, 8, true, true, CLOTHES_COLOR_COUNTS_US);
+    initCategory(categories[2], HATS_SHOP_NAMES_US, HATS_SHOP_COUNT, 0, HATS_SHOP_COUNT, 0xFF8, 8, true, true, HATS_COLOR_COUNTS_US);
     initCategory(categories[3], INTERIORS_NAMES, INTERIORS_COUNT, 0, INTERIORS_COUNT, 0x1778, 1, false, true);
     initCategory(categories[4], GOODS_NAMES, GOODS_COUNT, 0, GOODS_COUNT, 0x18F0, 1, false, false);
     initCategory(categories[5], TREASURES_NAMES_US, TREASURES_COUNT, 0, TREASURES_COUNT, 0x1902, 1, false, true);
@@ -1450,12 +1503,14 @@ int main(int argc, char** argv) {
             if (kDown & KEY_Y) {
                 if (isMiiFieldOptional(cursorIndex)) {
                     *getMiiEquipFoodFieldPtr(activeMii, cursorIndex) = 0xFFFF;
+                    if (cursorIndex == 1) {
+                        activeMii.equippedHatColor = 0;
+                        activeMii.equippedHatDirty = true;
+                    }
                 }
             }
             if (kDown & KEY_A) {
-                if (cursorIndex == 0 || cursorIndex == 1 || cursorIndex == 2) {
-                    snprintf(statusToast, sizeof(statusToast), "Equipped items locked (ID map pending)");
-                } else if (cursorIndex >= 10 && (cursorIndex - 10) >= getMaxQualifiedGiftSlots(activeMii)) {
+                if (cursorIndex >= 10 && (cursorIndex - 10) >= getMaxQualifiedGiftSlots(activeMii)) {
                     int reqLv = (cursorIndex - 10) + 2;
                     snprintf(statusToast, sizeof(statusToast), "Requires Lv.%d+ for Gift #%d!", reqLv, cursorIndex - 9);
                 } else {
@@ -1475,9 +1530,7 @@ int main(int argc, char** argv) {
             }
             int d = (kDown & KEY_RIGHT) ? 1 : ((kDown & KEY_LEFT) ? -1 : 0);
             if (d != 0) {
-                if (cursorIndex == 0 || cursorIndex == 1 || cursorIndex == 2) {
-                    snprintf(statusToast, sizeof(statusToast), "Equipped items locked (ID map pending)");
-                } else if (cursorIndex >= 10 && (cursorIndex - 10) >= getMaxQualifiedGiftSlots(activeMii)) {
+                if (cursorIndex >= 10 && (cursorIndex - 10) >= getMaxQualifiedGiftSlots(activeMii)) {
                     int reqLv = (cursorIndex - 10) + 2;
                     snprintf(statusToast, sizeof(statusToast), "Requires Lv.%d+ for Gift #%d!", reqLv, cursorIndex - 9);
                 } else {
@@ -1511,14 +1564,21 @@ int main(int argc, char** argv) {
                 u16 chosen = slots[cursorIndex];
                 if (chosen == 0xFFFF || !hasColors) {
                     *getMiiEquipFoodFieldPtr(activeMii, miiPickerField) = chosen;
+                    if (miiPickerField == 1) {
+                        activeMii.equippedHatColor = 0;
+                        activeMii.equippedHatDirty = true;
+                    } else if (miiPickerField == 2) {
+                        activeMii.equippedInteriorDirty = true;
+                    }
                     currentState = STATE_MII_GIFTS_FOODS;
                     cursorIndex = miiPickerField;
                     scrollOffset = (cursorIndex >= MAX_VISIBLE_ROWS) ? (cursorIndex - MAX_VISIBLE_ROWS + 1) : 0;
                 } else {
-                    miiPickerSlot = (int)chosen;
-                    u16 cur = *getMiiEquipFoodFieldPtr(activeMii, miiPickerField);
-                    int vc = getValidColorCount(cat, miiPickerSlot);
-                    int initCol = (cur != 0xFFFF && (int)(cur / 8) == miiPickerSlot) ? (int)(cur % 8) : 0;
+                    miiPickerSlot = (int)chosen; // Raw MSBT item ID
+                    int vc = getValidColorCountForMsbt(miiPickerField, chosen);
+                    u16 curId = (miiPickerField == 0) ? activeMii.equippedClothes : activeMii.equippedHat;
+                    u8 curCol = (miiPickerField == 0) ? activeMii.equippedClothesColor : activeMii.equippedHatColor;
+                    int initCol = (curId == chosen) ? (int)curCol : 0;
                     cursorIndex = (initCol >= 0 && initCol < vc) ? initCol : 0;
                     scrollOffset = 0;
                     currentState = STATE_MII_COLOR_PICKER;
@@ -1526,8 +1586,7 @@ int main(int argc, char** argv) {
             }
         }
         else if (currentState == STATE_MII_COLOR_PICKER) {
-            CategoryInfo* cat = (miiPickerField == 0) ? &categories[1] : &categories[2];
-            int validColors = getValidColorCount(cat, miiPickerSlot);
+            int validColors = getValidColorCountForMsbt(miiPickerField, (u16)miiPickerSlot);
             adjustListNav(kDown, validColors);
             if (kDown & KEY_B) {
                 int initCur = findMiiPickerInitialCursor(activeMii, miiPickerField);
@@ -1547,7 +1606,15 @@ int main(int argc, char** argv) {
                 currentState = STATE_MII_ITEM_PICKER;
             }
             if ((kDown & KEY_A) && validColors > 0) {
-                *getMiiEquipFoodFieldPtr(activeMii, miiPickerField) = (u16)(miiPickerSlot * 8 + cursorIndex);
+                if (miiPickerField == 0) {
+                    activeMii.equippedClothes = (u16)miiPickerSlot;
+                    activeMii.equippedClothesColor = (u8)cursorIndex;
+                    activeMii.equippedClothesDirty = true;
+                } else if (miiPickerField == 1) {
+                    activeMii.equippedHat = (u16)miiPickerSlot;
+                    activeMii.equippedHatColor = (u8)cursorIndex;
+                    activeMii.equippedHatDirty = true;
+                }
                 currentState = STATE_MII_GIFTS_FOODS;
                 cursorIndex = miiPickerField;
                 scrollOffset = (cursorIndex >= MAX_VISIBLE_ROWS) ? (cursorIndex - MAX_VISIBLE_ROWS + 1) : 0;
@@ -2021,16 +2088,10 @@ int main(int argc, char** argv) {
             };
             for (int i = 0; i < 10; i++) {
                 UIRow r; snprintf(r.label, sizeof(r.label), "%s", labels[i]); r.iconIdx = SPR_COUNT;
-                if (i == 0) {
-                    if (activeMii.equippedClothes == 0xFFFF) snprintf(r.value, sizeof(r.value), "None (Locked)");
-                    else snprintf(r.value, sizeof(r.value), "ID #%u (Locked)", (unsigned)activeMii.equippedClothes);
-                } else if (i == 1) {
-                    if (activeMii.equippedHat == 0xFFFF) snprintf(r.value, sizeof(r.value), "None (Locked)");
-                    else snprintf(r.value, sizeof(r.value), "ID #%u (Locked)", (unsigned)activeMii.equippedHat);
-                } else if (i == 2) {
-                    if (activeMii.equippedInterior == 0xFFFF) snprintf(r.value, sizeof(r.value), "None (Locked)");
-                    else snprintf(r.value, sizeof(r.value), "ID #%u (Locked)", (unsigned)activeMii.equippedInterior);
-                } else if (i == 3) formatFoodName(activeMii.superFavFood, r.value, sizeof(r.value));
+                if (i == 0) formatClothesName(activeMii.equippedClothes, activeMii.equippedClothesColor, r.value, sizeof(r.value));
+                else if (i == 1) formatHatName(activeMii.equippedHat, activeMii.equippedHatColor, r.value, sizeof(r.value));
+                else if (i == 2) formatInteriorName(activeMii.equippedInterior, r.value, sizeof(r.value));
+                else if (i == 3) formatFoodName(activeMii.superFavFood, r.value, sizeof(r.value));
                 else if (i == 4) formatFoodName(activeMii.allTimeFavFood, r.value, sizeof(r.value));
                 else if (i == 5) formatFoodName(activeMii.favFood1, r.value, sizeof(r.value));
                 else if (i == 6) formatFoodName(activeMii.favFood2, r.value, sizeof(r.value));
@@ -2066,15 +2127,18 @@ int main(int argc, char** argv) {
             }
             std::vector<u16> slots; bool hasColors = false; CategoryInfo* cat = nullptr;
             getMiiPickerSlotList(miiPickerField, slots, hasColors, cat);
-            u16 curVal = *getMiiEquipFoodFieldPtr(activeMii, miiPickerField);
-            u16 curSlot = (hasColors && curVal != 0xFFFF) ? (u16)(curVal / 8) : curVal;
+            u16 curSlot = *getMiiEquipFoodFieldPtr(activeMii, miiPickerField);
             for (size_t i = 0; i < slots.size(); i++) {
                 u16 s = slots[i];
                 UIRow r; r.iconIdx = SPR_COUNT;
                 if (s == 0xFFFF) {
                     snprintf(r.label, sizeof(r.label), "None");
-                } else if (miiPickerField == 0 || miiPickerField == 1) {
-                    strncpy(r.label, cat->names[s + cat->nameOffset], sizeof(r.label) - 1);
+                } else if (miiPickerField == 0) {
+                    strncpy(r.label, getClothesNameByMsbt(s), sizeof(r.label) - 1);
+                    r.label[sizeof(r.label) - 1] = '\0';
+                    capitalizeString(r.label);
+                } else if (miiPickerField == 1) {
+                    strncpy(r.label, getHatNameByMsbt(s), sizeof(r.label) - 1);
                     r.label[sizeof(r.label) - 1] = '\0';
                     capitalizeString(r.label);
                 } else if (miiPickerField == 2) {
@@ -2085,25 +2149,28 @@ int main(int argc, char** argv) {
                     snprintf(r.label, sizeof(r.label), "%s", getLevelUpGiftName(s));
                 }
                 if (s == curSlot) snprintf(r.value, sizeof(r.value), "Current");
-                else if (hasColors && s != 0xFFFF) snprintf(r.value, sizeof(r.value), "%d col", getValidColorCount(cat, (int)s));
+                else if (hasColors && s != 0xFFFF) snprintf(r.value, sizeof(r.value), "%d col", getValidColorCountForMsbt(miiPickerField, s));
                 else r.value[0] = '\0';
                 rows.push_back(r);
             }
             snprintf(bottomHint, sizeof(bottomHint), "[A] Select   [L/R] Page +/-10   [B] Back");
         } else if (currentState == STATE_MII_COLOR_PICKER) {
             headerIcon = SPR_ICON_MII;
-            CategoryInfo* cat = (miiPickerField == 0) ? &categories[1] : &categories[2];
-            int validColors = getValidColorCount(cat, miiPickerSlot);
+            int validColors = getValidColorCountForMsbt(miiPickerField, (u16)miiPickerSlot);
             char itemName[48];
-            strncpy(itemName, cat->names[miiPickerSlot + cat->nameOffset], sizeof(itemName) - 1);
+            const char* rawName = (miiPickerField == 0)
+                ? getClothesNameByMsbt((u16)miiPickerSlot)
+                : getHatNameByMsbt((u16)miiPickerSlot);
+            strncpy(itemName, rawName, sizeof(itemName) - 1);
             itemName[sizeof(itemName) - 1] = '\0';
             capitalizeString(itemName);
             snprintf(headerTitle, sizeof(headerTitle), "%.24s — Color", itemName);
-            u16 curVal = *getMiiEquipFoodFieldPtr(activeMii, miiPickerField);
+            u16 curId = (miiPickerField == 0) ? activeMii.equippedClothes : activeMii.equippedHat;
+            u8 curCol = (miiPickerField == 0) ? activeMii.equippedClothesColor : activeMii.equippedHatColor;
             for (int c = 0; c < validColors; c++) {
                 UIRow r;
                 snprintf(r.label, sizeof(r.label), "Color %d", c + 1);
-                if (curVal != 0xFFFF && (int)(curVal / 8) == miiPickerSlot && (int)(curVal % 8) == c) {
+                if (curId != 0xFFFF && curId == (u16)miiPickerSlot && (int)curCol == c) {
                     snprintf(r.value, sizeof(r.value), "Current");
                 } else {
                     r.value[0] = '\0';

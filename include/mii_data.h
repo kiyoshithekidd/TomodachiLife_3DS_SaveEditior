@@ -1,6 +1,7 @@
 #pragma once
 
 #include "save_io.h"
+#include "item_mapping.h"
 #include <vector>
 #include <stdio.h>
 
@@ -43,10 +44,15 @@ struct MiiEntry {
     u8 apartmentRoom;   // 0..99
     u8 miiHome;         // 0..49 or 0xFF
     // Equipped & Gifts
-    u16 equippedClothes;   // 0x1D42 US/EU/KR, 0x1D12 JP
-    u16 equippedHat;       // 0x1D44 US/EU/KR, 0x1D14 JP (0xFFFF = None)
-    u16 equippedInterior;  // 0x1F20 US/EU/KR, 0x1E20 JP
-    u16 levelUpGifts[8];   // 0x2258..0x2266 US/EU/KR, 0x2158..0x2166 JP (0..27 or 0xFFFF)
+    u16 equippedClothes;      // 0x1D42 US/EU/KR, 0x1D12 JP (raw MSBT Clothes ID)
+    u8  equippedClothesColor; // 0..7 from 0x1D11..0x1D12 bits 6..8 (JP 0x1CE1..0x1CE2)
+    u16 equippedHat;          // 0x1D44 US/EU/KR, 0x1D14 JP (raw MSBT Hat ID, or 0xFFFF = None)
+    u8  equippedHatColor;     // 0..7 from 0x1D12 bits 2..4 (JP 0x1CE2)
+    u16 equippedInterior;     // 0x1F20 US/EU/KR, 0x1E20 JP (raw MSBT Room ID)
+    bool equippedClothesDirty;
+    bool equippedHatDirty;
+    bool equippedInteriorDirty;
+    u16 levelUpGifts[8];      // 0x2258..0x2266 US/EU/KR, 0x2158..0x2166 JP (0..27 or 0xFFFF)
     // Voice & Personality
     u8 voice[6];        // 0..100
     u8 personality[5];  // 1..8
@@ -151,9 +157,18 @@ static inline void readMiiEntry(SafeFile* file, SaveRegion reg, int slot, MiiEnt
     file->read(getMiiFieldOffset(reg, slot, 0x22A8, 0x21A8), &m.apartmentRoom, 1, &br);
     file->read(getMiiFieldOffset(reg, slot, 0x22A9, 0x21A9), &m.miiHome, 1, &br);
 
+    u8 b11 = 0, b12 = 0;
+    file->read(getMiiFieldOffset(reg, slot, 0x1D11, 0x1CE1), &b11, 1, &br);
+    file->read(getMiiFieldOffset(reg, slot, 0x1D12, 0x1CE2), &b12, 1, &br);
+    m.equippedClothesColor = (u8)(((b11 >> 6) & 0x03) | ((b12 & 0x01) << 2));
+    m.equippedHatColor     = (u8)((b12 >> 2) & 0x07);
+
     file->read(getMiiFieldOffset(reg, slot, 0x1D42, 0x1D12), &m.equippedClothes, 2, &br);
     file->read(getMiiFieldOffset(reg, slot, 0x1D44, 0x1D14), &m.equippedHat, 2, &br);
     file->read(getMiiFieldOffset(reg, slot, 0x1F20, 0x1E20), &m.equippedInterior, 2, &br);
+    m.equippedClothesDirty  = false;
+    m.equippedHatDirty      = false;
+    m.equippedInteriorDirty = false;
     for (int g = 0; g < 8; g++) {
         file->read(getMiiFieldOffset(reg, slot, 0x2258 + g * 2, 0x2158 + g * 2), &m.levelUpGifts[g], 2, &br);
     }
@@ -304,9 +319,75 @@ static inline void writeMiiEntry(SafeFile* file, SafeArchive* archive, SaveRegio
     file->write(getMiiFieldOffset(reg, slot, 0x22A8, 0x21A8), &room, 1, &bw);
     file->write(getMiiFieldOffset(reg, slot, 0x22A9, 0x21A9), &in.miiHome, 1, &bw);
 
-    file->write(getMiiFieldOffset(reg, slot, 0x1D42, 0x1D12), &in.equippedClothes, 2, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x1D44, 0x1D14), &in.equippedHat, 2, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x1F20, 0x1E20), &in.equippedInterior, 2, &bw);
+    // Equipped Clothes, Hat, Interior + Color Bitfields + Personal Wardrobe Sync (#68, #70, #71)
+    if (in.equippedClothesDirty || in.equippedHatDirty) {
+        u8 b11 = 0, b12 = 0;
+        file->read(getMiiFieldOffset(reg, slot, 0x1D11, 0x1CE1), &b11, 1, &br);
+        file->read(getMiiFieldOffset(reg, slot, 0x1D12, 0x1CE2), &b12, 1, &br);
+
+        if (in.equippedClothesDirty) {
+            bool validC = (reg == REGION_US || reg == REGION_EU)
+                              ? isValidClothesMsbtId(in.equippedClothes)
+                              : (in.equippedClothes < 492);
+            if (validC) {
+                u8 cCol = in.equippedClothesColor & 0x07;
+                b11 = (u8)((b11 & 0x3F) | ((cCol & 0x03) << 6));
+                b12 = (u8)((b12 & 0xFE) | ((cCol >> 2) & 0x01));
+                file->write(getMiiFieldOffset(reg, slot, 0x1D42, 0x1D12), &in.equippedClothes, 2, &bw);
+                if (reg == REGION_US || reg == REGION_EU) {
+                    int packedC = clothesMsbtToPackedSlot(in.equippedClothes);
+                    if (packedC >= 0 && packedC < 504) {
+                        u64 wOff = getMiiFieldOffset(reg, slot, 0x1F70 + (u64)packedC, 0x1E70 + (u64)packedC);
+                        u8 wByte = 0;
+                        file->read(wOff, &wByte, 1, &br);
+                        wByte |= (u8)(1u << cCol);
+                        file->write(wOff, &wByte, 1, &bw);
+                    }
+                }
+            }
+        }
+        if (in.equippedHatDirty) {
+            bool validH = (reg == REGION_US || reg == REGION_EU)
+                              ? isValidHatMsbtId(in.equippedHat)
+                              : (in.equippedHat == 0xFFFF || in.equippedHat < 267);
+            if (validH) {
+                u8 hCol = (in.equippedHat == 0xFFFF) ? 0 : (in.equippedHatColor & 0x07);
+                b12 = (u8)((b12 & 0xE3) | ((hCol & 0x07) << 2));
+                file->write(getMiiFieldOffset(reg, slot, 0x1D44, 0x1D14), &in.equippedHat, 2, &bw);
+                if (in.equippedHat != 0xFFFF && (reg == REGION_US || reg == REGION_EU)) {
+                    int packedH = hatMsbtToPackedSlot(in.equippedHat);
+                    if (packedH >= 0 && packedH < 240) {
+                        u64 wOff = getMiiFieldOffset(reg, slot, 0x2168 + (u64)packedH, 0x2068 + (u64)packedH);
+                        u8 wByte = 0;
+                        file->read(wOff, &wByte, 1, &br);
+                        wByte |= (u8)(1u << hCol);
+                        file->write(wOff, &wByte, 1, &bw);
+                    }
+                }
+            }
+        }
+        file->write(getMiiFieldOffset(reg, slot, 0x1D11, 0x1CE1), &b11, 1, &bw);
+        file->write(getMiiFieldOffset(reg, slot, 0x1D12, 0x1CE2), &b12, 1, &bw);
+    }
+
+    if (in.equippedInteriorDirty) {
+        bool validI = (reg == REGION_US || reg == REGION_EU)
+                          ? isValidInteriorMsbtId(in.equippedInterior)
+                          : (in.equippedInterior < 112);
+        if (validI) {
+            file->write(getMiiFieldOffset(reg, slot, 0x1F20, 0x1E20), &in.equippedInterior, 2, &bw);
+            if (in.equippedInterior >= 8 && (reg == REGION_US || reg == REGION_EU)) {
+                int packedI = interiorMsbtToPackedSlot(in.equippedInterior);
+                if (packedI >= 0 && packedI < 102) {
+                    u64 iOff = getMiiFieldOffset(reg, slot, 0x1F59 + (u64)(packedI / 8), 0x1E59 + (u64)(packedI / 8));
+                    u8 iByte = 0;
+                    file->read(iOff, &iByte, 1, &br);
+                    iByte |= (u8)(1u << (packedI % 8));
+                    file->write(iOff, &iByte, 1, &bw);
+                }
+            }
+        }
+    }
     for (int g = 0; g < 8; g++) {
         file->write(getMiiFieldOffset(reg, slot, 0x2258 + g * 2, 0x2158 + g * 2), &in.levelUpGifts[g], 2, &bw);
     }
