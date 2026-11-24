@@ -227,6 +227,7 @@ The resulting `TomodachiLife_3DS_SaveEditor.3dsx` (and `.cia` when building `mak
 ├── include/
 │   ├── save_io.h                 # SafeFile/SafeArchive RAII, auto-backup, UTF-16 helpers
 │   ├── mii_data.h                # Mii CFSD/Status/Foods/Gifts, CRC16-XMODEM, .tlmii/.tlamii
+│   ├── item_mapping.h            # Packed shop slot <-> raw MSBT ID tables & wardrobe helpers
 │   ├── relationships_data.h      # Relationship matrix, symmetric Spouse/Sweetheart, fights
 │   ├── island_data.h             # Island info/config, Travelers, Concert songs, Interactions
 │   ├── food_names.h              # US & EU food items
