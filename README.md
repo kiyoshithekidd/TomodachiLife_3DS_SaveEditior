@@ -96,10 +96,10 @@ If you have a modded 3DS and want to use the editor:
 ## Changelog
 
 ### v1.0.4 — Mii Favorite Foods ID Mapping & Personal Bitmask Sync (2026-11-24)
-- **Mii Favorite / Disliked Foods Raw Internal ID Mapping**:
+- **Mii Favorite / Disliked Foods Raw Internal ID Mapping (`#72`)**:
   - Added hardware-verified packed-slot ↔ raw internal Food ID tables (`FOODS_PACKED_TO_MSBT_US[231]` covering `0..380`, `FOODS_PACKED_TO_MSBT_EU[231]` covering `0..381`) in `include/item_mapping.h`.
   - Fixed Mii Food reading/display (`formatFoodName`) and editing (`STATE_MII_GIFTS_FOODS` / `STATE_MII_ITEM_PICKER`) so `Super All-Time Fav`, `All-Time Fav`, `Favorite #1–#3`, `Worst`, and `Worst Ever` (`0x2298..0x22A4` US/EU/KR, `0x2198..0x21A4` JP) write real internal Food IDs instead of packed Food Mart slot indices (which landed on regional gaps or mismatched foods).
-- **Mii Eaten-Foods & Owned Level-Up Gifts Bitmask Sync**:
+- **Mii Eaten-Foods & Owned Level-Up Gifts Bitmask Sync (`#72`, `#73`)**:
   - Guarded Favorite Food and Level-Up Gift writes with per-field dirty flags (`foodsDirtyMask`, `levelUpGiftsDirty`) so untouched slots and unrevealed hidden favorites are never modified.
   - Automatically sets the edited food's bit in the Mii's personal Eaten/Discovered Foods bitmask (`0x1F30..0x1F4F` US/EU/KR, `0x1E30..0x1E4F` JP) so edited favorites appear immediately in-game instead of staying hidden (`???`).
   - Automatically syncs the Mii's personal Owned Level-Up Gifts bitmask (`0x1F54..0x1F57` US/EU/KR, `0x1E54..0x1E57` JP, bits `0..27`) whenever Level-Up Gifts (`0x2258..0x2266`) are edited.
