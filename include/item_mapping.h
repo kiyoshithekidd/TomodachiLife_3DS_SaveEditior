@@ -3,6 +3,7 @@
 #include "save_io.h"
 #include "clothes_dataset.h"
 #include "interiors_dataset.h"
+#include "food_names.h"
 
 // Hardware-verified packed save slot <-> raw MSBT item ID mappings (#68, #69, #70, #71)
 //
@@ -10,10 +11,14 @@
 //   - Mii Equipped Clothes (0x1D42 US/EU/KR, 0x1D12 JP) stores the raw MSBT Clothes ID (0..489).
 //   - Mii Equipped Hat     (0x1D44 US/EU/KR, 0x1D14 JP) stores the raw MSBT Hat ID (0..246, or 0xFFFF = None).
 //   - Mii Equipped Interior(0x1F20 US/EU/KR, 0x1E20 JP) stores the raw MSBT Room ID (0..7 basic, 8..111 shop).
+//   - Mii Favorite Foods   (0x2298..0x22A4 US/EU/KR, 0x2198..0x21A4 JP) store raw internal Food IDs (0..380 US, 0..381 EU, or 0xFFFF = None).
+//   - Mii Level-Up Gifts   (0x2258..0x2266 US/EU/KR, 0x2158..0x2166 JP) store Gift IDs (0..27, or 0xFFFF = None).
 //   - Mii Equipped Colors  (0x1D11..0x1D12 US/EU/KR, 0x1CE1..0x1CE2 JP):
 //       Clothes color (0..7) = ((b1D11 >> 6) & 0x03) | ((b1D12 & 0x01) << 2)
 //       Hat color     (0..7) = (b1D12 >> 2) & 0x07
-//   - Global Shop Inventory & Mii Personal Wardrobe use PACKED regional slots skipping localized gaps:
+//   - Global Shop Inventory & Mii Personal Wardrobe / Discovery Bitmasks use PACKED regional slots:
+//       Foods:     Global 0x17F0 + slot     <-> Mii Eaten Foods 0x1F30 bit(slot) (JP 0x1E30), 231 slots (0..230)
+//       Gifts:     Mii Owned Gifts bitmask  <-> 0x1F54..0x1F57 bit(giftId) (JP 0x1E54), 28 gifts (0..27)
 //       Clothes:   Global 0x0030 + slot*8   <-> Mii Wardrobe 0x1F70 + slot (JP 0x1E70), 447 slots (0..446)
 //       Hats:      Global 0x0FF0 + slot*8   <-> Mii Wardrobe 0x2168 + slot (JP 0x2068), 237 slots (0..236)
 //                  (Note: slot 0 = Bear Hat [costume set, 0 shop colors], so buyable shop hats start at 0x0FF8 = slot 1!)
@@ -23,6 +28,7 @@ static const int CLOTHES_PACKED_COUNT   = 447;
 static const int HATS_PACKED_COUNT      = 237;
 static const int HATS_SHOP_COUNT        = 219; // slots 1..219 at 0x0FF8..0x16CF
 static const int INTERIORS_PACKED_COUNT = 102;
+static const int FOODS_PACKED_COUNT     = 231;
 
 static const int CLOTHES_MSBT_OFFSET    = 984;  // CLOTHES_NAMES[984]  = "regular clothes"
 static const int HATS_MSBT_OFFSET       = 2600; // CLOTHES_NAMES[2600] = "bear hat"
@@ -822,5 +828,63 @@ static inline const char* getInteriorNameByMsbt(u16 msbtId) {
     if (msbtId < 8) return STARTER_ROOM_NAMES[msbtId];
     int slot = interiorMsbtToPackedSlot(msbtId);
     if (slot >= 0 && slot < INTERIORS_COUNT) return INTERIORS_NAMES[slot];
+    return nullptr;
+}
+
+static const u16 FOODS_PACKED_TO_MSBT_US[231] = {
+      0,   1,   2,   5,  14,  23,  27,  28,  29,  30,  31,  34,  36,  37,  38,  40,
+     41,  42,  43,  44,  45,  46,  47,  48,  49,  50,  51,  52,  53,  56,  58,  61,
+     63,  64,  66,  67,  69,  70,  72,  73,  74,  76,  77,  80,  84,  86,  87,  88,
+     89,  91,  92,  95,  96,  97,  98,  99, 100, 101, 102, 103, 104, 105, 106, 107,
+    108, 109, 110, 112, 114, 115, 117, 119, 121, 122, 123, 125, 126, 132, 135, 136,
+    137, 138, 139, 140, 141, 142, 143, 144, 146, 147, 148, 149, 150, 151, 152, 153,
+    154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169,
+    170, 171, 172, 173, 174, 175, 178, 180, 181, 182, 183, 185, 186, 187, 188, 189,
+    190, 191, 192, 193, 194, 195, 197, 198, 199, 201, 202, 210, 214, 216, 218, 229,
+    230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245,
+    246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260, 261,
+    262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277,
+    278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293,
+    294, 295, 296, 297, 298, 299, 300, 301, 302, 303, 351, 352, 353, 369, 372, 373,
+    374, 375, 376, 377, 378, 379, 380,
+};
+
+static const u16 FOODS_PACKED_TO_MSBT_EU[231] = {
+      0,   2,   5,  10,  16,  20,  23,  26,  27,  29,  31,  32,  34,  36,  38,  40,
+     42,  44,  45,  46,  47,  48,  49,  50,  51,  53,  54,  56,  58,  61,  62,  63,
+     66,  67,  69,  70,  73,  76,  77,  80,  86,  87,  89,  90,  91,  92,  96,  97,
+     98,  99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 112, 114, 115,
+    117, 119, 122, 123, 126, 132, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144,
+    146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161,
+    162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 178, 180,
+    182, 183, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 197, 198, 199,
+    200, 201, 202, 205, 210, 216, 218, 222, 229, 230, 231, 232, 233, 234, 235, 236,
+    237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252,
+    253, 297, 298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311,
+    312, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328,
+    329, 330, 331, 332, 333, 334, 335, 336, 337, 338, 340, 342, 343, 344, 345, 346,
+    347, 348, 349, 350, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 364, 365,
+    366, 367, 368, 369, 370, 371, 381,
+};
+
+static inline const u16* getFoodPackedToMsbtTable(SaveRegion reg) {
+    return (reg == REGION_EU) ? FOODS_PACKED_TO_MSBT_EU : FOODS_PACKED_TO_MSBT_US;
+}
+
+static inline int foodMsbtToPackedSlot(SaveRegion reg, u16 msbtId) {
+    const u16* tbl = getFoodPackedToMsbtTable(reg);
+    for (int i = 0; i < FOODS_PACKED_COUNT; i++) {
+        if (tbl[i] == msbtId) return i;
+    }
+    return -1;
+}
+
+static inline bool isValidFoodMsbtId(SaveRegion reg, u16 msbtId) {
+    return (msbtId == 0xFFFF) || (foodMsbtToPackedSlot(reg, msbtId) >= 0);
+}
+
+static inline const char* getFoodNameByMsbt(SaveRegion reg, u16 msbtId) {
+    int slot = foodMsbtToPackedSlot(reg, msbtId);
+    if (slot >= 0 && slot < FOOD_COUNT) return FOOD_NAMES[slot];
     return nullptr;
 }

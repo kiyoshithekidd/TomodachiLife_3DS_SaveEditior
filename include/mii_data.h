@@ -53,17 +53,19 @@ struct MiiEntry {
     bool equippedHatDirty;
     bool equippedInteriorDirty;
     u16 levelUpGifts[8];      // 0x2258..0x2266 US/EU/KR, 0x2158..0x2166 JP (0..27 or 0xFFFF)
+    bool levelUpGiftsDirty;
     // Voice & Personality
     u8 voice[6];        // 0..100
     u8 personality[5];  // 1..8
-    // Food Likes / Dislikes (0x2298..0x22A4 US/EU/KR, 0x2198..0x21A4 JP)
-    u16 superFavFood;   // 0x2298
-    u16 worstEverFood;  // 0x229A
-    u16 allTimeFavFood; // 0x229C
-    u16 worstFood;      // 0x229E
-    u16 favFood1;       // 0x22A0
-    u16 favFood2;       // 0x22A2
-    u16 favFood3;       // 0x22A4
+    // Food Likes / Dislikes (0x2298..0x22A4 US/EU/KR, 0x2198..0x21A4 JP; raw internal Food IDs)
+    u16 superFavFood;   // 0x2298 (foodsDirtyMask bit 0)
+    u16 worstEverFood;  // 0x229A (foodsDirtyMask bit 6)
+    u16 allTimeFavFood; // 0x229C (foodsDirtyMask bit 1)
+    u16 worstFood;      // 0x229E (foodsDirtyMask bit 5)
+    u16 favFood1;       // 0x22A0 (foodsDirtyMask bit 2)
+    u16 favFood2;       // 0x22A2 (foodsDirtyMask bit 3)
+    u16 favFood3;       // 0x22A4 (foodsDirtyMask bit 4)
+    u8  foodsDirtyMask; // bit (fieldIdx - 3) set when edited
 };
 
 static inline const char* getFavColorName(u8 c) {
@@ -172,6 +174,7 @@ static inline void readMiiEntry(SafeFile* file, SaveRegion reg, int slot, MiiEnt
     for (int g = 0; g < 8; g++) {
         file->read(getMiiFieldOffset(reg, slot, 0x2258 + g * 2, 0x2158 + g * 2), &m.levelUpGifts[g], 2, &br);
     }
+    m.levelUpGiftsDirty = false;
 
     file->read(getMiiFieldOffset(reg, slot, 0x1D7A, 0x1D4A), m.voice, 6, &br);
     file->read(getMiiFieldOffset(reg, slot, 0x1D80, 0x1D50), m.personality, 5, &br);
@@ -183,6 +186,7 @@ static inline void readMiiEntry(SafeFile* file, SaveRegion reg, int slot, MiiEnt
     file->read(getMiiFieldOffset(reg, slot, 0x22A0, 0x21A0), &m.favFood1, 2, &br);
     file->read(getMiiFieldOffset(reg, slot, 0x22A2, 0x21A2), &m.favFood2, 2, &br);
     file->read(getMiiFieldOffset(reg, slot, 0x22A4, 0x21A4), &m.favFood3, 2, &br);
+    m.foodsDirtyMask = 0;
 }
 
 static inline void scanRegisteredMiis(SafeFile* file, SaveRegion reg, std::vector<MiiEntry>& outList) {
@@ -388,8 +392,17 @@ static inline void writeMiiEntry(SafeFile* file, SafeArchive* archive, SaveRegio
             }
         }
     }
-    for (int g = 0; g < 8; g++) {
-        file->write(getMiiFieldOffset(reg, slot, 0x2258 + g * 2, 0x2158 + g * 2), &in.levelUpGifts[g], 2, &bw);
+    if (in.levelUpGiftsDirty) {
+        u32 giftMask = 0;
+        file->read(getMiiFieldOffset(reg, slot, 0x1F54, 0x1E54), &giftMask, 4, &br);
+        giftMask &= 0xF0000000u; // preserve bits 28..31; rebuild 0..27 from active Level-Up Gifts
+        for (int g = 0; g < 8; g++) {
+            u16 gid = in.levelUpGifts[g];
+            if (gid != 0xFFFF && gid >= 28) gid = 0xFFFF;
+            file->write(getMiiFieldOffset(reg, slot, 0x2258 + g * 2, 0x2158 + g * 2), &gid, 2, &bw);
+            if (gid < 28) giftMask |= (1u << gid);
+        }
+        file->write(getMiiFieldOffset(reg, slot, 0x1F54, 0x1E54), &giftMask, 4, &bw);
     }
 
     u8 voiceClamped[6];
@@ -399,13 +412,43 @@ static inline void writeMiiEntry(SafeFile* file, SafeArchive* archive, SaveRegio
     file->write(getMiiFieldOffset(reg, slot, 0x1D7A, 0x1D4A), voiceClamped, 6, &bw);
     file->write(getMiiFieldOffset(reg, slot, 0x1D80, 0x1D50), persClamped, 5, &bw);
 
-    file->write(getMiiFieldOffset(reg, slot, 0x2298, 0x2198), &in.superFavFood, 2, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x229A, 0x219A), &in.worstEverFood, 2, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x229C, 0x219C), &in.allTimeFavFood, 2, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x229E, 0x219E), &in.worstFood, 2, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x22A0, 0x21A0), &in.favFood1, 2, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x22A2, 0x21A2), &in.favFood2, 2, &bw);
-    file->write(getMiiFieldOffset(reg, slot, 0x22A4, 0x21A4), &in.favFood3, 2, &bw);
+    // Favorite / Disliked Foods + Mii Eaten/Discovered Food Bitmask Sync (0x1F30..0x1F4F US/EU, 0x1E30..0x1E4F JP)
+    if (in.foodsDirtyMask != 0) {
+        struct FoodFieldSpec {
+            u8 bit;
+            u64 usOff;
+            u64 jpOff;
+            u16 val;
+        };
+        const FoodFieldSpec specs[7] = {
+            { 0, 0x2298, 0x2198, in.superFavFood   },
+            { 1, 0x229C, 0x219C, in.allTimeFavFood },
+            { 2, 0x22A0, 0x21A0, in.favFood1       },
+            { 3, 0x22A2, 0x21A2, in.favFood2       },
+            { 4, 0x22A4, 0x21A4, in.favFood3       },
+            { 5, 0x229E, 0x219E, in.worstFood      },
+            { 6, 0x229A, 0x219A, in.worstEverFood  },
+        };
+        for (int f = 0; f < 7; f++) {
+            if ((in.foodsDirtyMask & (u8)(1u << specs[f].bit)) == 0) continue;
+            u16 fval = specs[f].val;
+            bool validF = (reg == REGION_US || reg == REGION_EU)
+                              ? isValidFoodMsbtId(reg, fval)
+                              : (fval == 0xFFFF || fval < 400);
+            if (!validF) continue;
+            file->write(getMiiFieldOffset(reg, slot, specs[f].usOff, specs[f].jpOff), &fval, 2, &bw);
+            if (fval != 0xFFFF && (reg == REGION_US || reg == REGION_EU)) {
+                int packedF = foodMsbtToPackedSlot(reg, fval);
+                if (packedF >= 0 && packedF < 256) {
+                    u64 eOff = getMiiFieldOffset(reg, slot, 0x1F30 + (u64)(packedF / 8), 0x1E30 + (u64)(packedF / 8));
+                    u8 eByte = 0;
+                    file->read(eOff, &eByte, 1, &br);
+                    eByte |= (u8)(1u << (packedF % 8));
+                    file->write(eOff, &eByte, 1, &bw);
+                }
+            }
+        }
+    }
 
     updateMiiCfsdChecksum(file, reg, slot);
 

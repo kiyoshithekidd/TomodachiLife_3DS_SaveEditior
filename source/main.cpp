@@ -32,17 +32,18 @@ void capitalizeString(char* str) {
     }
 }
 
-void formatFoodName(u16 id, char* out, size_t outSz) {
-    if (id == 0xFFFF) {
+void formatFoodName(SaveRegion reg, u16 msbtId, char* out, size_t outSz) {
+    if (msbtId == 0xFFFF) {
         snprintf(out, outSz, "None");
         return;
     }
-    if ((int)id < FOOD_COUNT) {
-        strncpy(out, FOOD_NAMES[id], outSz - 1);
+    const char* raw = getFoodNameByMsbt(reg, msbtId);
+    if (raw != nullptr) {
+        strncpy(out, raw, outSz - 1);
         out[outSz - 1] = '\0';
         capitalizeString(out);
     } else {
-        snprintf(out, outSz, "Special Food #%u", (unsigned)id);
+        snprintf(out, outSz, "Special Food #%u", (unsigned)msbtId);
     }
 }
 
@@ -389,8 +390,12 @@ void getMiiPickerSlotList(int fieldIdx, std::vector<u16>& outSlots, bool& outHas
         }
     } else if (fieldIdx >= 3 && fieldIdx <= 9) {
         outCat = &categories[0];
+        const u16* foodTbl = getFoodPackedToMsbtTable(currentRegion);
         for (size_t i = 0; i < outCat->filteredIndices.size(); i++) {
-            outSlots.push_back((u16)outCat->filteredIndices[i]);
+            int packed = outCat->filteredIndices[i];
+            if (packed >= 0 && packed < FOODS_PACKED_COUNT) {
+                outSlots.push_back(foodTbl[packed]);
+            }
         }
     } else if (fieldIdx >= 10 && fieldIdx < 18) {
         for (u16 g = 0; g < 28; g++) outSlots.push_back(g);
@@ -451,6 +456,8 @@ void stepMiiEquipFoodValid(MiiEntry& m, int fieldIdx, int delta) {
     if (next < 0) next += n;
     *ptr = slots[next];
     if (fieldIdx == 2) m.equippedInteriorDirty = true;
+    else if (fieldIdx >= 3 && fieldIdx <= 9) m.foodsDirtyMask |= (u8)(1u << (fieldIdx - 3));
+    else if (fieldIdx >= 10 && fieldIdx < 18) m.levelUpGiftsDirty = true;
 }
 
 int findMiiPickerInitialCursor(const MiiEntry& m, int fieldIdx) {
@@ -1498,6 +1505,11 @@ int main(int argc, char** argv) {
             adjustListNav(kDown, 18); // 3 Equipped + 7 Foods + 8 Level-Up Gifts
             if (kDown & KEY_B) {
                 writeMiiEntry(file.get(), archive.get(), currentRegion, activeMii);
+                activeMii.equippedClothesDirty = false;
+                activeMii.equippedHatDirty = false;
+                activeMii.equippedInteriorDirty = false;
+                activeMii.levelUpGiftsDirty = false;
+                activeMii.foodsDirtyMask = 0;
                 currentState = STATE_MII_SUBMENU; cursorIndex = 3; scrollOffset = 0;
             }
             if (kDown & KEY_Y) {
@@ -1506,6 +1518,10 @@ int main(int argc, char** argv) {
                     if (cursorIndex == 1) {
                         activeMii.equippedHatColor = 0;
                         activeMii.equippedHatDirty = true;
+                    } else if (cursorIndex >= 3 && cursorIndex <= 9) {
+                        activeMii.foodsDirtyMask |= (u8)(1u << (cursorIndex - 3));
+                    } else if (cursorIndex >= 10 && cursorIndex < 18) {
+                        activeMii.levelUpGiftsDirty = true;
                     }
                 }
             }
@@ -1569,6 +1585,10 @@ int main(int argc, char** argv) {
                         activeMii.equippedHatDirty = true;
                     } else if (miiPickerField == 2) {
                         activeMii.equippedInteriorDirty = true;
+                    } else if (miiPickerField >= 3 && miiPickerField <= 9) {
+                        activeMii.foodsDirtyMask |= (u8)(1u << (miiPickerField - 3));
+                    } else if (miiPickerField >= 10 && miiPickerField < 18) {
+                        activeMii.levelUpGiftsDirty = true;
                     }
                     currentState = STATE_MII_GIFTS_FOODS;
                     cursorIndex = miiPickerField;
@@ -2091,13 +2111,13 @@ int main(int argc, char** argv) {
                 if (i == 0) formatClothesName(activeMii.equippedClothes, activeMii.equippedClothesColor, r.value, sizeof(r.value));
                 else if (i == 1) formatHatName(activeMii.equippedHat, activeMii.equippedHatColor, r.value, sizeof(r.value));
                 else if (i == 2) formatInteriorName(activeMii.equippedInterior, r.value, sizeof(r.value));
-                else if (i == 3) formatFoodName(activeMii.superFavFood, r.value, sizeof(r.value));
-                else if (i == 4) formatFoodName(activeMii.allTimeFavFood, r.value, sizeof(r.value));
-                else if (i == 5) formatFoodName(activeMii.favFood1, r.value, sizeof(r.value));
-                else if (i == 6) formatFoodName(activeMii.favFood2, r.value, sizeof(r.value));
-                else if (i == 7) formatFoodName(activeMii.favFood3, r.value, sizeof(r.value));
-                else if (i == 8) formatFoodName(activeMii.worstFood, r.value, sizeof(r.value));
-                else formatFoodName(activeMii.worstEverFood, r.value, sizeof(r.value));
+                else if (i == 3) formatFoodName(currentRegion, activeMii.superFavFood, r.value, sizeof(r.value));
+                else if (i == 4) formatFoodName(currentRegion, activeMii.allTimeFavFood, r.value, sizeof(r.value));
+                else if (i == 5) formatFoodName(currentRegion, activeMii.favFood1, r.value, sizeof(r.value));
+                else if (i == 6) formatFoodName(currentRegion, activeMii.favFood2, r.value, sizeof(r.value));
+                else if (i == 7) formatFoodName(currentRegion, activeMii.favFood3, r.value, sizeof(r.value));
+                else if (i == 8) formatFoodName(currentRegion, activeMii.worstFood, r.value, sizeof(r.value));
+                else formatFoodName(currentRegion, activeMii.worstEverFood, r.value, sizeof(r.value));
                 rows.push_back(r);
             }
             int maxGifts = getMaxQualifiedGiftSlots(activeMii);
@@ -2144,7 +2164,7 @@ int main(int argc, char** argv) {
                 } else if (miiPickerField == 2) {
                     formatInteriorName(s, r.label, sizeof(r.label));
                 } else if (miiPickerField >= 3 && miiPickerField <= 9) {
-                    formatFoodName(s, r.label, sizeof(r.label));
+                    formatFoodName(currentRegion, s, r.label, sizeof(r.label));
                 } else {
                     snprintf(r.label, sizeof(r.label), "%s", getLevelUpGiftName(s));
                 }
